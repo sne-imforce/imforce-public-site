@@ -1,8 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@300;400;600;700;800&family=Open+Sans:wght@300;400;600;700&family=Roboto:wght@400;500;700&display=swap');
 
 :root {
-  font-family: 'DM Sans', sans-serif;
-  color: #142a38;
+  font-family: 'Open Sans', sans-serif;
+  color: #15191f;
   background: #fff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -10,13 +10,19 @@
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
 
-  --color-ink: #273d7b;
+  --color-primary: #012e6f;
+  --color-accent: #2f7fc9;
+  --color-ink: #15191f;
   --color-muted: #526478;
-  --color-teal: #3482bf;
-  --color-teal-dark: #27669e;
-  --color-lime: #83b9df;
-  --color-mist: #f2f6fa;
+  --color-teal: #2f7fc9;
+  --color-teal-dark: #2469ad;
+  --color-lime: #9bc8ee;
+  --color-mist: #eef3fa;
   --color-border: #dce5ed;
+  --font-heading: 'Montserrat', sans-serif;
+  --font-interface: 'Inter', sans-serif;
+  --font-body: 'Open Sans', sans-serif;
+  --font-numbers: 'Roboto', sans-serif;
   --page-width: 1160px;
 }
 
@@ -37,7 +43,7 @@ body {
 body,
 button,
 a {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
 }
 
 a {
@@ -50,18 +56,23 @@ a {
 }
 
 a:focus-visible {
-  outline: 3px solid var(--color-teal);
+  outline: 3px solid var(--color-accent);
   outline-offset: 4px;
 }
 
 .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   width: min(var(--page-width), calc(100% - 64px));
   height: 82px;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 32px;
+  gap: 20px;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(39, 61, 123, 0.1);
 }
 
 .brand-logo-link {
@@ -83,25 +94,72 @@ a:focus-visible {
 .main-nav {
   display: flex;
   align-items: center;
-  gap: 36px;
+  gap: 20px;
   margin-left: auto;
 }
 
 .main-nav a,
+.nav-dropdown summary,
 .header-cta {
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
 }
 
-.main-nav a {
+.main-nav a,
+.nav-dropdown summary {
   color: var(--color-muted);
   transition: color 160ms ease;
 }
 
 .main-nav a:hover,
+.nav-dropdown summary:hover,
 .site-footer > a:not(.brand-logo-link):hover {
   color: var(--color-teal);
+}
+
+.nav-dropdown {
+  position: relative;
+}
+
+.nav-dropdown summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.nav-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-dropdown summary:focus-visible {
+  outline: 3px solid var(--color-teal);
+  outline-offset: 4px;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 15px);
+  left: -14px;
+  z-index: 25;
+  min-width: 180px;
+  display: grid;
+  padding: 7px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(20, 42, 56, 0.12);
+}
+
+.dropdown-menu a {
+  padding: 11px 12px;
+  font-size: 12px;
+}
+
+.dropdown-menu a:hover {
+  background: var(--color-mist);
 }
 
 .header-cta {
@@ -114,11 +172,6 @@ a:focus-visible {
 .header-cta:hover {
   border-color: var(--color-teal);
   background: var(--color-mist);
-}
-
-.header-cta span {
-  margin-left: 8px;
-  color: var(--color-teal);
 }
 
 .hero {
@@ -556,21 +609,27 @@ h3 {
     height: auto;
     min-height: 72px;
     flex-wrap: wrap;
-    gap: 14px;
+    gap: 10px 14px;
     padding: 13px 0;
   }
 
   .main-nav {
     order: 3;
     width: 100%;
-    justify-content: space-between;
-    gap: 12px;
-    padding-top: 9px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 12px 18px;
+    padding-top: 10px;
     border-top: 1px solid var(--color-border);
   }
 
-  .main-nav a {
+  .main-nav a,
+  .nav-dropdown summary {
     font-size: 11px;
+  }
+
+  .dropdown-menu {
+    top: calc(100% + 10px);
   }
 
   .header-cta {

@@ -1,0 +1,447 @@
+.vacancies-section,
+.insights-section,
+.why-imforce {
+  padding: 78px 32px;
+}
+
+.vacancies-section {
+  background: #f5f8fc;
+}
+
+.vacancies-section__inner,
+.insights-section__inner {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.vacancies-section__heading,
+.vacancy-group__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.content-eyebrow {
+  margin: 0 0 10px;
+  color: var(--color-accent);
+  font: 700 11px/1.4 var(--font-interface);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.content-eyebrow--urgent {
+  color: #a43e2d;
+}
+
+.vacancies-section__heading h2,
+.insights-section__heading h2 {
+  margin: 0;
+  color: var(--color-primary);
+  font: 700 clamp(1.8rem, 3.5vw, 2.5rem)/1.2 var(--font-heading);
+  letter-spacing: -0.035em;
+}
+
+.vacancies-section__intro {
+  margin: 12px 0 0;
+  color: #536477;
+  font: 400 15px/1.7 var(--font-body);
+}
+
+.vacancies-section__all-link {
+  min-height: 46px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  color: var(--color-primary);
+  font: 600 13px/1 var(--font-interface);
+  text-decoration: none;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.vacancies-section__all-link:hover {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.vacancies-preview-note {
+  margin-top: 26px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--color-accent);
+  background: #eaf1f9;
+  color: #35475b;
+  font: 400 12px/1.6 var(--font-body);
+}
+
+.vacancy-group {
+  margin-top: 42px;
+}
+
+.vacancy-group__heading {
+  margin-bottom: 16px;
+}
+
+.vacancy-group__heading .content-eyebrow {
+  margin-bottom: 5px;
+}
+
+.vacancy-group__heading h3 {
+  margin: 0;
+  color: #15191f;
+  font: 700 20px/1.3 var(--font-heading);
+}
+
+.vacancy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.vacancy-grid--urgent {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vacancy-card {
+  min-width: 0;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 21px;
+  border: 1px solid #dfe6ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #15191f;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.vacancy-card:hover {
+  transform: translateY(-3px);
+  border-color: #9bb9d8;
+  box-shadow: 0 12px 28px rgba(1, 46, 111, 0.1);
+}
+
+.vacancy-card:focus-visible,
+.vacancy-dialog__close:focus-visible,
+.vacancies-section__all-link:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.vacancy-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+
+.vacancy-badge {
+  min-height: 25px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #eaf1f9;
+  color: #274c78;
+  font: 700 10px/1 var(--font-interface);
+}
+
+.vacancy-badge--urgent {
+  background: #fff0ed;
+  color: #9c3d2c;
+}
+
+.vacancy-badge--sample {
+  background: #f1f3f5;
+  color: #4d5966;
+}
+
+.vacancy-card__title {
+  margin-bottom: 11px;
+  color: var(--color-primary);
+  font: 700 17px/1.4 var(--font-heading);
+}
+
+.vacancy-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: #526478;
+  font: 500 11px/1.5 var(--font-interface);
+}
+
+.vacancy-card__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 14px;
+  color: #526070;
+  font: 400 12px/1.65 var(--font-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.vacancy-card__action {
+  margin-top: auto;
+  padding-top: 17px;
+  color: var(--color-accent);
+  font: 700 12px/1.3 var(--font-interface);
+}
+
+.insights-section {
+  background: #fff;
+}
+
+.why-imforce {
+  background: #fff;
+  color: var(--color-ink);
+}
+
+.why-imforce__inner {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.why-imforce__heading {
+  max-width: 700px;
+  margin: 0 0 34px;
+  text-align: left;
+}
+
+.why-imforce__heading .content-eyebrow {
+  color: var(--color-accent);
+}
+
+.why-imforce__heading h2 {
+  margin: 0;
+  color: var(--color-primary);
+  font: 700 clamp(1.9rem, 3.5vw, 2.6rem)/1.2 var(--font-heading);
+  letter-spacing: -0.035em;
+}
+
+.why-imforce__heading > p:last-child {
+  margin: 12px 0 0;
+  color: #536477;
+  font: 400 14px/1.7 var(--font-body);
+}
+
+.why-imforce__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: clamp(24px, 4vw, 56px);
+  row-gap: 28px;
+}
+
+.why-imforce__card {
+  min-width: 0;
+  padding: 0;
+}
+
+.why-imforce__value {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 9px;
+  color: var(--color-primary);
+  font-family: var(--font-interface);
+}
+
+.why-imforce__value strong {
+  color: var(--color-primary);
+  font: 700 clamp(1.55rem, 2.4vw, 2rem)/1.2 var(--font-numbers);
+}
+
+.why-imforce__card:not(:first-child) .why-imforce__value strong {
+  font: 700 clamp(1.05rem, 1.8vw, 1.4rem)/1.3 var(--font-heading);
+}
+
+.why-imforce__value span {
+  color: var(--color-accent);
+  font: 600 12px/1.4 var(--font-interface);
+}
+
+.why-imforce__card h3 {
+  margin: 0 0 8px;
+  color: var(--color-primary);
+  font: 600 13px/1.5 var(--font-interface);
+}
+
+.why-imforce__card > p:last-child {
+  margin: 0;
+  color: #536477;
+  font: 400 11px/1.7 var(--font-body);
+}
+
+.insights-section__heading {
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.insight-card {
+  min-height: 208px;
+  padding: 23px;
+  border: 1px solid #e1e7ee;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.insight-card__category {
+  margin: 0 0 14px;
+  color: var(--color-accent);
+  font: 700 10px/1.4 var(--font-interface);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.insight-card h3 {
+  margin: 0 0 11px;
+  color: var(--color-primary);
+  font: 700 16px/1.5 var(--font-heading);
+}
+
+.insight-card > p:last-child {
+  margin: 0;
+  color: #536477;
+  font: 400 12px/1.75 var(--font-body);
+}
+
+.vacancy-dialog {
+  width: min(620px, calc(100% - 32px));
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  color: #15191f;
+  box-shadow: 0 24px 70px rgba(0, 13, 36, 0.28);
+}
+
+.vacancy-dialog::backdrop {
+  background: rgba(0, 16, 40, 0.68);
+  backdrop-filter: blur(3px);
+}
+
+.vacancy-dialog__content {
+  padding: clamp(24px, 5vw, 40px);
+}
+
+.vacancy-dialog__close {
+  min-height: 44px;
+  display: block;
+  margin: 0 0 24px auto;
+  padding: 0 15px;
+  border: 1px solid #d4dfeb;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-primary);
+  font: 600 12px var(--font-interface);
+  cursor: pointer;
+}
+
+.vacancy-dialog h2 {
+  margin: 0 0 12px;
+  color: var(--color-primary);
+  font: 700 clamp(1.5rem, 4vw, 2rem)/1.25 var(--font-heading);
+}
+
+.vacancy-dialog h3 {
+  margin: 22px 0 8px;
+  color: var(--color-primary);
+  font: 700 15px/1.4 var(--font-heading);
+}
+
+.vacancy-dialog p,
+.vacancy-dialog li {
+  color: #4a5969;
+  font: 400 13px/1.75 var(--font-body);
+}
+
+.vacancy-dialog ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.vacancy-dialog__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 22px;
+  color: #526478;
+  font: 500 12px/1.5 var(--font-interface);
+}
+
+.vacancy-dialog__notice {
+  margin: 22px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--color-accent);
+  background: #eef3fa;
+}
+
+@media (max-width: 760px) {
+  .vacancies-section,
+  .insights-section,
+  .why-imforce {
+    padding: 58px 20px;
+  }
+
+  .vacancies-section__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .vacancy-grid,
+  .vacancy-grid--urgent {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .vacancy-card {
+    min-height: 250px;
+    padding: 16px;
+  }
+
+  .insights-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .why-imforce__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .insight-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 500px) {
+  .vacancy-grid,
+  .vacancy-grid--urgent {
+    grid-template-columns: 1fr;
+  }
+
+  .vacancy-card {
+    min-height: 218px;
+  }
+
+  .why-imforce__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .why-imforce__card,
+  .why-imforce__card + .why-imforce__card {
+    padding: 0;
+  }
+}
