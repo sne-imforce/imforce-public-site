@@ -60,7 +60,7 @@
   background: transparent;
   color: #fff;
   font-family: var(--font-interface);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.25;
   text-decoration: none;
@@ -139,12 +139,19 @@
   top: calc(100% + 4px);
   left: -12px;
   z-index: 25;
-  min-width: 190px;
-  padding: 7px;
+  min-width: 205px;
+  padding: 9px;
   border-radius: 8px;
   background: #fff;
   color: #111827;
   box-shadow: 0 12px 28px rgba(0, 13, 36, 0.2);
+}
+
+.navbar__dropdown--industries .navbar__dropdown-panel {
+  min-width: 340px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .navbar__dropdown-panel[hidden] {
@@ -159,7 +166,7 @@
   border-radius: 5px;
   color: #111827;
   font-family: var(--font-interface);
-  font-size: 13px;
+  font-size: 14px;
   text-decoration: none;
 }
 
@@ -267,6 +274,11 @@
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+  }
+
+  .navbar__mobile-nav .navbar__dropdown--industries .navbar__dropdown-panel {
+    min-width: 0;
+    grid-template-columns: 1fr;
   }
 
   .navbar__mobile-nav .navbar__dropdown-panel[hidden] {

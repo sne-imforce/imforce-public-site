@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FiChevronDown, FiMenu, FiX } from 'react-icons/fi'
+import { useLocation } from 'react-router-dom'
 import imforceLogo from '../../assets/imforce logo image.webp'
 import './Navbar.css'
 
@@ -14,12 +15,37 @@ type DropdownItem = LinkItem & {
 
 const navigationLinks: LinkItem[] = [
   { label: 'Home', href: '/' },
-  { label: 'About', href: '/about' },
   { label: 'Permanent Staffing', href: '/services/placements' },
   { label: 'Careers & Job Search', href: '/careers' },
   { label: 'Fee Calculator', href: '/fee-calculator' },
   { label: 'Contact', href: '/contact' },
 ]
+
+const industries = [
+  'Manufacturing',
+  'FMCG',
+  'Hospitality',
+  'Retail',
+  'Engineering',
+  'Finance',
+  'Security',
+  'Logistics',
+  'IT',
+]
+
+const aboutDropdown = {
+  label: 'About',
+  items: [
+    { id: 'about', label: 'About IMFORCE', href: '/about' },
+    { id: 'about-fee-calculator', label: 'IMFORCE Fee Calculator', href: '/fee-calculator' },
+    { id: 'about-careers', label: 'Careers', href: '/careers' },
+    ...industries.map((industry) => ({
+      id: `industry-${industry.toLowerCase()}`,
+      label: industry,
+      href: `/about#industry-${industry.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    })),
+  ],
+}
 
 const employerDropdown = {
   label: 'For Employers',
@@ -64,7 +90,7 @@ function NavbarDropdown({
 }: NavbarDropdownProps) {
   return (
     <div
-      className={`navbar__dropdown${isMobile ? ' navbar__dropdown--mobile' : ''}${isOpen ? ' is-open' : ''}`}
+      className={`navbar__dropdown${isMobile ? ' navbar__dropdown--mobile' : ''}${label === 'About' ? ' navbar__dropdown--industries' : ''}${isOpen ? ' is-open' : ''}`}
       onMouseEnter={isMobile ? undefined : onOpen}
       onMouseLeave={isMobile ? undefined : onClose}
     >
@@ -98,27 +124,16 @@ function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
-  const [currentUrl, setCurrentUrl] = useState(
-    () => `${window.location.pathname}${window.location.hash}`,
-  )
+  const location = useLocation()
+  const currentUrl = `${location.pathname}${location.hash}`
   const navbarRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const updateScrollState = () => setIsScrolled(window.scrollY > 24)
-    const updateCurrentUrl = () => {
-      setCurrentUrl(`${window.location.pathname}${window.location.hash}`)
-      setOpenDropdown(null)
-      setIsMobileMenuOpen(false)
-    }
-
     updateScrollState()
     window.addEventListener('scroll', updateScrollState, { passive: true })
-    window.addEventListener('popstate', updateCurrentUrl)
-    window.addEventListener('hashchange', updateCurrentUrl)
     return () => {
       window.removeEventListener('scroll', updateScrollState)
-      window.removeEventListener('popstate', updateCurrentUrl)
-      window.removeEventListener('hashchange', updateCurrentUrl)
     }
   }, [])
 
@@ -169,7 +184,7 @@ function Navbar() {
   }
 
   const renderDropdown = (
-    dropdown: typeof employerDropdown,
+    dropdown: typeof aboutDropdown | typeof employerDropdown | typeof certificatesDropdown,
     isMobile: boolean,
   ) => {
     const id = `${isMobile ? 'mobile' : 'desktop'}-${dropdown.items[0].id}-menu`
@@ -189,47 +204,35 @@ function Navbar() {
         }
         onOpen={() => setOpenDropdown(id)}
         onClose={() => {
-          if (!isMobile) setOpenDropdown(null)
+          if (!isMobile && dropdown.label !== 'About') {
+            setOpenDropdown(null)
+          }
         }}
         onNavigate={closeNavigation}
       />
     )
   }
 
+  const renderLink = (link: LinkItem) => (
+    <a
+      className={`navbar__link${isActive(link.href) ? ' is-active' : ''}`}
+      href={link.href}
+      key={link.href}
+      onClick={closeNavigation}
+    >
+      {link.label}
+    </a>
+  )
+
   const renderLinks = (isMobile: boolean) => (
     <>
-      {navigationLinks.slice(0, 3).map((link) => (
-        <a
-          className={`navbar__link${isActive(link.href) ? ' is-active' : ''}`}
-          href={link.href}
-          key={link.href}
-          onClick={closeNavigation}
-        >
-          {link.label}
-        </a>
-      ))}
+      {renderLink(navigationLinks[0])}
+      {renderDropdown(aboutDropdown, isMobile)}
+      {renderLink(navigationLinks[1])}
       {renderDropdown(employerDropdown, isMobile)}
-      {navigationLinks.slice(3, 4).map((link) => (
-        <a
-          className={`navbar__link${isActive(link.href) ? ' is-active' : ''}`}
-          href={link.href}
-          key={link.href}
-          onClick={closeNavigation}
-        >
-          {link.label}
-        </a>
-      ))}
+      {renderLink(navigationLinks[2])}
       {renderDropdown(certificatesDropdown, isMobile)}
-      {navigationLinks.slice(4).map((link) => (
-        <a
-          className={`navbar__link${isActive(link.href) ? ' is-active' : ''}`}
-          href={link.href}
-          key={link.href}
-          onClick={closeNavigation}
-        >
-          {link.label}
-        </a>
-      ))}
+      {navigationLinks.slice(3).map(renderLink)}
     </>
   )
 
