@@ -233,6 +233,36 @@
   color: var(--color-primary);
 }
 
+.employers-form__draft-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: -12px 0 24px;
+}
+
+.employers-form__draft-status {
+  margin: 0;
+  color: var(--color-muted);
+  font: 400 13px/1.6 var(--font-body);
+}
+
+.employers-form__clear-draft {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-primary);
+  font: 600 13px/1.4 var(--font-interface);
+  cursor: pointer;
+}
+
+.employers-form__clear-draft:hover {
+  background: #f2f6fb;
+}
+
 .employers-form {
   display: grid;
   gap: 24px;
@@ -352,6 +382,150 @@
   font: 600 14px/1.6 var(--font-body);
 }
 
+.employers-review {
+  width: min(840px, calc(100% - 32px));
+  max-width: none;
+  max-height: min(88dvh, 900px);
+  margin: auto;
+  padding: clamp(20px, 4vw, 32px);
+  overflow-y: auto;
+  border: 0;
+  border-radius: 16px;
+  color: var(--color-ink);
+  box-shadow: 0 24px 70px rgb(0 13 36 / 28%);
+}
+
+.employers-review::backdrop {
+  background: rgb(0 13 36 / 62%);
+}
+
+.employers-review__header,
+.employers-review__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.employers-review__header h2 {
+  margin: 0;
+  color: var(--color-primary);
+  font: 700 clamp(1.6rem, 3vw, 2rem)/1.2 var(--font-heading);
+}
+
+.employers-review__close {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--color-primary);
+  font: 400 28px/1 var(--font-interface);
+  cursor: pointer;
+}
+
+.employers-review__notice {
+  margin: 20px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-mist);
+  color: #35475b;
+  font: 400 14px/1.6 var(--font-body);
+}
+
+.employers-review__section {
+  margin-top: 24px;
+}
+
+.employers-review__section h3,
+.employers-review__estimate h3 {
+  margin: 0 0 12px;
+  color: var(--color-primary);
+  font: 700 17px/1.4 var(--font-heading);
+}
+
+.employers-review__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.employers-review__details > div {
+  min-width: 0;
+}
+
+.employers-review__details dt {
+  color: var(--color-muted);
+  font: 600 12px/1.5 var(--font-interface);
+}
+
+.employers-review__details dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--color-ink);
+  font: 400 14px/1.6 var(--font-body);
+}
+
+.employers-review__estimate {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 28px;
+  padding: 20px;
+  border: 1px solid #d5e0ec;
+  border-radius: 12px;
+  background: #f8fafd;
+}
+
+.employers-review__estimate h3 {
+  margin-bottom: 4px;
+}
+
+.employers-review__estimate > div p,
+.employers-review__vat-note {
+  margin: 0;
+  color: var(--color-muted);
+  font: 400 13px/1.6 var(--font-body);
+}
+
+.employers-review__estimate > strong {
+  color: var(--color-primary);
+  font: 700 30px/1.2 var(--font-numbers);
+}
+
+.employers-review__vat-note {
+  grid-column: 1 / -1;
+}
+
+.employers-review__footer {
+  margin-top: 22px;
+}
+
+.employers-review__checkout-note {
+  margin: 0 0 16px;
+  color: #8a3b16;
+  font: 600 14px/1.6 var(--font-body);
+}
+
+.employers-review__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.employers-button--secondary {
+  border-color: var(--color-border);
+  background: #fff;
+  color: var(--color-primary);
+}
+
+.employers-button--secondary:hover {
+  background: #f2f6fb;
+}
+
 .employers-page :focus-visible {
   outline-color: var(--color-accent);
 }
@@ -433,6 +607,15 @@
 
   .employers-form__field--full {
     grid-column: auto;
+  }
+
+  .employers-review__details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .employers-review__actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 }
 

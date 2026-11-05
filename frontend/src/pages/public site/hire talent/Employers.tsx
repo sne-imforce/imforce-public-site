@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import Navbar from '../../../components/public/Navbar'
 import './Employers.css'
 
@@ -22,9 +22,236 @@ const processSteps = [
   },
 ]
 
+const companyReviewFields = [
+  ['legalName', 'Legal company name'],
+  ['tradingName', 'Trading name'],
+  ['registrationNumber', 'Company registration number'],
+  ['vatNumber', 'VAT number'],
+  ['companyAddress', 'Company street address'],
+  ['contactName', 'Contact person'],
+  ['email', 'Contact email'],
+  ['phone', 'Contact phone'],
+  ['billingContact', 'Billing contact'],
+  ['billingAddress', 'Billing address'],
+] as const
+
+const jobReviewFields = [
+  ['jobTitle', 'Job title'],
+  ['jobLocation', 'Job location'],
+  ['numberOfHires', 'Number of people to hire'],
+  ['employmentType', 'Employment type'],
+  ['workingHours', 'Working hours'],
+  ['salary', 'Salary or salary range'],
+  ['closingDate', 'Closing date'],
+  ['duties', 'Main duties'],
+  ['requirements', 'Skills and requirements'],
+  ['qualifications', 'Qualifications and experience'],
+  ['authorizedContact', 'Authority to share these details'],
+] as const
+
+type ReviewItem = {
+  label: string
+  value: string
+}
+
+type JobOrderReview = {
+  company: ReviewItem[]
+  job: ReviewItem[]
+}
+
+type StoredDraft = Record<string, string | boolean>
+
+const draftStorageKey = 'imforce-employer-job-order-draft'
+
+const salaryPrefillFormatter = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function formatSalaryPrefill(monthlySalary: string) {
+  const salary = Number(monthlySalary)
+  if (!Number.isFinite(salary) || salary <= 0) return monthlySalary.trim()
+  return `${salaryPrefillFormatter.format(salary)} per month`
+}
+
+function isDraftControl(
+  control: Element,
+): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
+  return (
+    (control instanceof HTMLInputElement ||
+      control instanceof HTMLSelectElement ||
+      control instanceof HTMLTextAreaElement) &&
+    Boolean(control.name) &&
+    !(control instanceof HTMLInputElement && control.type === 'file')
+  )
+}
+
+function applyControlValue(
+  control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+  value: string | boolean,
+) {
+  if (control instanceof HTMLInputElement && control.type === 'checkbox') {
+    control.checked = value === true
+    return
+  }
+  if (typeof value === 'string') {
+    control.value = value
+  }
+}
+
+function readFormDraft(form: HTMLFormElement): StoredDraft {
+  const draft: StoredDraft = {}
+  for (const control of Array.from(form.elements)) {
+    if (!isDraftControl(control)) continue
+    draft[control.name] =
+      control instanceof HTMLInputElement && control.type === 'checkbox'
+        ? control.checked
+        : control.value
+  }
+  return draft
+}
+
+function isStoredDraft(value: unknown): value is StoredDraft {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(
+      (field) => typeof field === 'string' || typeof field === 'boolean',
+    )
+  )
+}
+
+function readStoredDraft(): { draft: StoredDraft | null; status: string } {
+  let savedDraft: string | null
+  try {
+    savedDraft = sessionStorage.getItem(draftStorageKey)
+  } catch {
+    return {
+      draft: null,
+      status:
+        'This browser could not access saved drafts. Keep this page open to avoid losing your answers.',
+    }
+  }
+
+  if (!savedDraft) {
+    return {
+      draft: null,
+      status:
+        'Your answers are saved in this browser tab as you fill in the form.',
+    }
+  }
+
+  let parsedDraft: unknown
+  try {
+    parsedDraft = JSON.parse(savedDraft)
+  } catch {
+    return {
+      draft: null,
+      status:
+        'The saved draft could not be read. Clear it below before entering your details.',
+    }
+  }
+
+  if (!isStoredDraft(parsedDraft)) {
+    return {
+      draft: null,
+      status:
+        'The saved draft has an invalid format. Clear it below before entering your details.',
+    }
+  }
+
+  return {
+    draft: parsedDraft,
+    status:
+      'Your saved answers were restored. Selected files must be added again.',
+  }
+}
+
 function Employers() {
+  const [searchParams] = useSearchParams()
   const [jobDescriptionName, setJobDescriptionName] = useState('')
-  const [previewReady, setPreviewReady] = useState(false)
+  const [review, setReview] = useState<JobOrderReview | null>(null)
+  const [checkoutUnavailable, setCheckoutUnavailable] = useState(false)
+  const [initialDraft] = useState(readStoredDraft)
+  const [hasSavedDraft, setHasSavedDraft] = useState(
+    initialDraft.draft !== null,
+  )
+  const [draftStatus, setDraftStatus] = useState(initialDraft.status)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
+  const today = new Date()
+  const minClosingDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+  useEffect(() => {
+    const form = formRef.current
+    if (!form) return
+
+    if (initialDraft.draft) {
+      for (const control of Array.from(form.elements)) {
+        if (!isDraftControl(control)) continue
+        const value = initialDraft.draft[control.name]
+        if (value === undefined) continue
+        applyControlValue(control, value)
+      }
+    }
+
+    const jobTitle = searchParams.get('jobTitle')?.trim() ?? ''
+    const monthlySalary = searchParams.get('monthlySalary')?.trim() ?? ''
+    const numberOfHires = searchParams.get('numberOfHires')?.trim() ?? ''
+    const prefill: Array<[string, string]> = []
+
+    if (jobTitle) prefill.push(['jobTitle', jobTitle])
+    if (monthlySalary) prefill.push(['salary', formatSalaryPrefill(monthlySalary)])
+    if (numberOfHires) prefill.push(['numberOfHires', numberOfHires])
+
+    if (prefill.length === 0) return
+
+    for (const [name, value] of prefill) {
+      const control = form.elements.namedItem(name)
+      if (
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement ||
+        control instanceof HTMLTextAreaElement
+      ) {
+        applyControlValue(control, value)
+      }
+    }
+
+    try {
+      sessionStorage.setItem(
+        draftStorageKey,
+        JSON.stringify(readFormDraft(form)),
+      )
+      setHasSavedDraft(true)
+      setDraftStatus(
+        'The position title, salary and number of hires were filled from the fee calculator. Selected files are not saved.',
+      )
+    } catch {
+      setDraftStatus(
+        'The position details were filled from the fee calculator, but this browser could not save the draft.',
+      )
+    }
+
+    document.getElementById('job-order')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }, [initialDraft, searchParams])
+
+  useEffect(() => {
+    if (!review) return
+
+    const dialog = dialogRef.current
+    if (!dialog) return
+    dialog.showModal()
+
+    return () => {
+      if (dialog.open) dialog.close()
+    }
+  }, [review])
 
   useEffect(() => {
     const previousTitle = document.title
@@ -158,19 +385,84 @@ function Employers() {
           </div>
 
           <aside className="employers-form-notice">
-            <strong>This form is a preview only.</strong> It does not send or
-            save your details. Email verification, the approved agreement,
-            invoices, payment and job tracking are not connected yet. Do not
-            enter real private or payment information here.
+            <strong>This form is a preview only.</strong> Your answers are
+            stored only in this browser tab so they remain after a refresh.
+            They are not sent to IMFORCE. The selected job-description file is
+            not stored and must be added again after a refresh. Clear your
+            saved draft when finished. Paystack checkout and job tracking are
+            not connected yet. Use test details only; do not enter bank or card
+            information.
           </aside>
+          {hasSavedDraft && (
+            <div className="employers-form__draft-controls">
+              <p className="employers-form__draft-status" role="status" aria-live="polite">
+                {draftStatus}
+              </p>
+              <button
+                className="employers-form__clear-draft"
+                type="button"
+                onClick={() => {
+                  try {
+                    sessionStorage.removeItem(draftStorageKey)
+                  } catch {
+                    setDraftStatus('This browser could not clear the saved draft.')
+                    return
+                  }
+                  formRef.current?.reset()
+                  setJobDescriptionName('')
+                  setReview(null)
+                  setCheckoutUnavailable(false)
+                  setHasSavedDraft(false)
+                }}
+              >
+                Clear saved draft
+              </button>
+            </div>
+          )}
 
           <form
             className="employers-form"
+            ref={formRef}
             onSubmit={(event) => {
               event.preventDefault()
-              setPreviewReady(true)
+              const formData = new FormData(event.currentTarget)
+              const readFields = (
+                fields: ReadonlyArray<readonly [string, string]>,
+              ) =>
+                fields.map(([name, label]) => {
+                  const value = formData.get(name)
+                  return {
+                    label,
+                    value:
+                      name === 'authorizedContact'
+                        ? value === 'on'
+                          ? 'Confirmed'
+                          : 'Not confirmed'
+                        : String(value ?? '').trim() || 'Not provided',
+                  }
+                })
+
+              setCheckoutUnavailable(false)
+              setReview({
+                company: readFields(companyReviewFields),
+                job: readFields(jobReviewFields),
+              })
             }}
-            onChange={() => setPreviewReady(false)}
+            onChange={(event) => {
+              const draft = readFormDraft(event.currentTarget)
+
+              try {
+                sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
+                setHasSavedDraft(true)
+                setDraftStatus(
+                  'Your answers are saved in this browser tab. Selected files are not saved.',
+                )
+              } catch {
+                setDraftStatus(
+                  'This browser could not save your draft. Keep this page open or copy your answers before refreshing.',
+                )
+              }
+            }}
           >
             <fieldset className="employers-form__section">
               <legend>1. Company and contact details</legend>
@@ -190,7 +482,6 @@ function Employers() {
                 <label className="employers-form__field">
                   VAT number
                   <input name="vatNumber" />
-                  <small>Leave blank if it does not apply.</small>
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Company street address *
@@ -278,7 +569,12 @@ function Employers() {
                 </label>
                 <label className="employers-form__field">
                   Closing date *
-                  <input name="closingDate" type="date" required />
+                  <input
+                    name="closingDate"
+                    type="date"
+                    min={minClosingDate}
+                    required
+                  />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Main duties *
@@ -316,8 +612,8 @@ function Employers() {
               <p>
                 <strong>Agreement and payment:</strong> The approved recruitment
                 agreement and its version must be provided before you can
-                accept it. PayPod invoices and NetCash payments are not
-                connected on this preview page.
+                accept it. Paystack checkout is not connected on this preview
+                page.
               </p>
               <p>
                 The R499 activation fee is charged once per job order. Any
@@ -339,16 +635,106 @@ function Employers() {
               >
                 Check job order
               </button>
-              {previewReady && (
-                <p className="employers-form__status" role="status">
-                  The required fields are complete. This is only a preview.
-                  Nothing was sent or saved.
-                </p>
-              )}
             </div>
           </form>
         </section>
       </main>
+      {review && (
+        <dialog
+          className="employers-review"
+          ref={dialogRef}
+          aria-labelledby="job-order-review-title"
+          onClose={() => setReview(null)}
+        >
+          <div className="employers-review__header">
+            <div>
+              <p className="employers-eyebrow employers-eyebrow--blue">
+                Job order preview
+              </p>
+              <h2 id="job-order-review-title">Check your details</h2>
+            </div>
+            <button
+              className="employers-review__close"
+              type="button"
+              aria-label="Close job order review"
+              onClick={() => dialogRef.current?.close()}
+            >
+              ×
+            </button>
+          </div>
+
+          <p className="employers-review__notice">
+            This is a preview only. Your details have not been sent or saved.
+          </p>
+
+          <section className="employers-review__section">
+            <h3>Company and contact details</h3>
+            <dl className="employers-review__details">
+              {review.company.map(({ label, value }) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="employers-review__section">
+            <h3>Job details</h3>
+            <dl className="employers-review__details">
+              {review.job.map(({ label, value }) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+              <div>
+                <dt>Job description file</dt>
+                <dd>{jobDescriptionName || 'Not provided'}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="employers-review__estimate" aria-label="Fee estimate">
+            <div>
+              <h3>Estimated activation fee</h3>
+              <p>
+                One fee per job order, regardless of the number of people hired.
+              </p>
+            </div>
+            <strong>R499</strong>
+            <p className="employers-review__vat-note">
+              Estimate only. VAT treatment is still being confirmed by IMFORCE
+              Finance, so VAT is not included in this estimate.
+            </p>
+          </section>
+
+          <div className="employers-review__footer">
+            {checkoutUnavailable && (
+              <p className="employers-review__checkout-note" role="status">
+                Paystack checkout is not connected yet. No payment was made and
+                your details were not sent.
+              </p>
+            )}
+            <div className="employers-review__actions">
+              <button
+                className="employers-button employers-button--secondary"
+                type="button"
+                onClick={() => dialogRef.current?.close()}
+              >
+                Back to edit
+              </button>
+              <button
+                className="employers-button employers-button--primary"
+                type="button"
+                onClick={() => setCheckoutUnavailable(true)}
+              >
+                Checkout
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
     </>
   )
 }

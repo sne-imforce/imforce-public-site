@@ -16,6 +16,7 @@ type DropdownItem = LinkItem & {
 const navigationLinks: LinkItem[] = [
   { label: 'Home', href: '/' },
   { label: 'Permanent Staffing', href: '/services/placements' },
+  { label: 'For Employers', href: '/employers' },
   { label: 'Careers & Job Search', href: '/careers' },
   { label: 'Fee Calculator', href: '/fee-calculator' },
   { label: 'Contact', href: '/contact' },
@@ -47,14 +48,6 @@ const aboutDropdown = {
   ],
 }
 
-const employerDropdown = {
-  label: 'For Employers',
-  items: [
-    { id: 'employers', label: 'Employers', href: '/employers' },
-    { id: 'job-posts', label: 'Job Posts', href: '/employers/job-posts' },
-  ],
-}
-
 const certificatesDropdown = {
   label: 'Certificates',
   items: [
@@ -70,11 +63,20 @@ type NavbarDropdownProps = {
   isOpen: boolean
   isMobile?: boolean
   isActive: (href: string) => boolean
+  isToggleActive: boolean
   onToggle: () => void
   onOpen: () => void
   onClose: () => void
   onNavigate: () => void
 }
+
+function pathFromHref(href: string) {
+  return new URL(href, window.location.origin).pathname.replace(/\/$/, '') || '/'
+}
+
+const topLevelNavPaths = new Set(
+  navigationLinks.map((link) => pathFromHref(link.href)),
+)
 
 function NavbarDropdown({
   label,
@@ -83,6 +85,7 @@ function NavbarDropdown({
   isOpen,
   isMobile = false,
   isActive,
+  isToggleActive,
   onToggle,
   onOpen,
   onClose,
@@ -95,7 +98,7 @@ function NavbarDropdown({
       onMouseLeave={isMobile ? undefined : onClose}
     >
       <button
-        className={`navbar__link navbar__dropdown-toggle${items.some((item) => isActive(item.href)) ? ' is-active' : ''}`}
+        className={`navbar__link navbar__dropdown-toggle${isToggleActive ? ' is-active' : ''}`}
         type="button"
         aria-expanded={isOpen}
         aria-controls={id}
@@ -174,17 +177,21 @@ function Navbar() {
   }
 
   const isActive = (href: string) => {
-    const target = new URL(href, window.location.origin)
-    const current = new URL(currentUrl, window.location.origin)
-    const targetPath = target.pathname.replace(/\/$/, '') || '/'
-    const currentPath = current.pathname.replace(/\/$/, '') || '/'
+    const targetPath = pathFromHref(href)
+    const currentPath = pathFromHref(currentUrl)
 
     if (targetPath === '/') return currentPath === '/'
     return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`)
   }
 
+  const isDropdownToggleActive = (items: DropdownItem[]) =>
+    items.some((item) => {
+      if (topLevelNavPaths.has(pathFromHref(item.href))) return false
+      return isActive(item.href)
+    })
+
   const renderDropdown = (
-    dropdown: typeof aboutDropdown | typeof employerDropdown | typeof certificatesDropdown,
+    dropdown: typeof aboutDropdown | typeof certificatesDropdown,
     isMobile: boolean,
   ) => {
     const id = `${isMobile ? 'mobile' : 'desktop'}-${dropdown.items[0].id}-menu`
@@ -197,6 +204,7 @@ function Navbar() {
         isOpen={openDropdown === id}
         isMobile={isMobile}
         isActive={isActive}
+        isToggleActive={isDropdownToggleActive(dropdown.items)}
         onToggle={() =>
           setOpenDropdown(
             isMobile ? (openDropdown === id ? null : id) : id,
@@ -229,10 +237,10 @@ function Navbar() {
       {renderLink(navigationLinks[0])}
       {renderDropdown(aboutDropdown, isMobile)}
       {renderLink(navigationLinks[1])}
-      {renderDropdown(employerDropdown, isMobile)}
       {renderLink(navigationLinks[2])}
+      {renderLink(navigationLinks[3])}
       {renderDropdown(certificatesDropdown, isMobile)}
-      {navigationLinks.slice(3).map(renderLink)}
+      {navigationLinks.slice(4).map(renderLink)}
     </>
   )
 

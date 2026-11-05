@@ -49,6 +49,56 @@ function formatCurrency(value: number) {
   return zarFormatter.format(value)
 }
 
+function isPositionReady(position: PositionInput) {
+  const salary = Number(position.monthlySalary)
+  const hires = Number(position.numberOfHires)
+  return (
+    Boolean(position.title.trim()) &&
+    Number.isFinite(salary) &&
+    salary > 0 &&
+    Number.isSafeInteger(hires) &&
+    hires > 0
+  )
+}
+
+function jobOrderPath(position: PositionInput) {
+  const params = new URLSearchParams()
+  const title = position.title.trim()
+  if (title) params.set('jobTitle', title)
+  if (position.monthlySalary.trim()) {
+    params.set('monthlySalary', position.monthlySalary.trim())
+  }
+  if (position.numberOfHires.trim()) {
+    params.set('numberOfHires', position.numberOfHires.trim())
+  }
+  const query = params.toString()
+  return `/employers${query ? `?${query}` : ''}#job-order`
+}
+
+function StartJobOrderButton({ position }: { position: PositionInput }) {
+  const ready = isPositionReady(position)
+
+  if (!ready) {
+    return (
+      <span
+        className="fee-calculator-button fee-calculator-start-order is-disabled"
+        aria-disabled="true"
+      >
+        Start a job order
+      </span>
+    )
+  }
+
+  return (
+    <Link
+      className="fee-calculator-button fee-calculator-start-order"
+      to={jobOrderPath(position)}
+    >
+      Start a job order
+    </Link>
+  )
+}
+
 function FeeCalculator() {
   const [positions, setPositions] = useState<PositionInput[]>([
     { id: 1, title: 'Position 1', monthlySalary: '', numberOfHires: '1' },
@@ -337,16 +387,25 @@ function FeeCalculator() {
                         )}
                       </div>
                     </div>
-                    {positions.length > 1 && (
-                      <button
-                        className="fee-calculator-remove-position"
-                        type="button"
-                        aria-label={`Remove ${position.title || `position ${index + 1}`}`}
-                        onClick={() => removePosition(position.id)}
-                      >
-                        <FiTrash2 aria-hidden="true" />
-                        Remove position
-                      </button>
+                    <div className="fee-calculator-position__actions">
+                      <StartJobOrderButton position={position} />
+                      {positions.length > 1 && (
+                        <button
+                          className="fee-calculator-remove-position"
+                          type="button"
+                          aria-label={`Remove ${position.title || `position ${index + 1}`}`}
+                          onClick={() => removePosition(position.id)}
+                        >
+                          <FiTrash2 aria-hidden="true" />
+                          Remove position
+                        </button>
+                      )}
+                    </div>
+                    {!isPositionReady(position) && (
+                      <p className="fee-calculator-start-order__hint">
+                        Add the position title, salary and number of hires to
+                        start a job order.
+                      </p>
                     )}
                   </fieldset>
                 )
@@ -381,50 +440,57 @@ function FeeCalculator() {
                   </div>
 
                   <div className="fee-calculator-position-results">
-                    {estimate.positions.map((position) => (
-                      <article
-                        className="fee-calculator-position-result"
-                        key={position.id}
-                      >
-                        <div className="fee-calculator-position-result__heading">
-                          <h4>{position.title}</h4>
-                          <span>
-                            {position.numberOfHires}{' '}
-                            {position.numberOfHires === 1 ? 'hire' : 'hires'}
-                          </span>
-                        </div>
-                        <dl>
-                          <div>
-                            <dt>Annual CTC per hire</dt>
-                            <dd>{formatCurrency(position.annualCtcPerHire)}</dd>
+                    {estimate.positions.map((position) => {
+                      const input = positions.find(
+                        (current) => current.id === position.id,
+                      )
+
+                      return (
+                        <article
+                          className="fee-calculator-position-result"
+                          key={position.id}
+                        >
+                          <div className="fee-calculator-position-result__heading">
+                            <h4>{position.title}</h4>
+                            <span>
+                              {position.numberOfHires}{' '}
+                              {position.numberOfHires === 1 ? 'hire' : 'hires'}
+                            </span>
                           </div>
-                          <div>
-                            <dt>Placement fee per hire</dt>
-                            <dd>{formatCurrency(position.placementFeePerHire)}</dd>
-                          </div>
-                          <div>
-                            <dt>Total placement fee</dt>
-                            <dd>{formatCurrency(position.totalPlacementFee)}</dd>
-                          </div>
-                          <div>
-                            <dt>Monthly instalment for this position</dt>
-                            <dd>{formatCurrency(position.totalInstalment)}</dd>
-                          </div>
-                          <div>
-                            <dt>Activation fee for this position</dt>
-                            <dd>{formatCurrency(ACTIVATION_FEE)}</dd>
-                          </div>
-                          <div>
-                            <dt>Activation credit on first invoice</dt>
-                            <dd>−{formatCurrency(position.activationCreditApplied)}</dd>
-                          </div>
-                          <div className="fee-calculator-position-result__first-invoice">
-                            <dt>First invoice after credit</dt>
-                            <dd>{formatCurrency(position.firstInvoiceAfterCredit)}</dd>
-                          </div>
-                        </dl>
-                      </article>
-                    ))}
+                          <dl>
+                            <div>
+                              <dt>Annual CTC per hire</dt>
+                              <dd>{formatCurrency(position.annualCtcPerHire)}</dd>
+                            </div>
+                            <div>
+                              <dt>Placement fee per hire</dt>
+                              <dd>{formatCurrency(position.placementFeePerHire)}</dd>
+                            </div>
+                            <div>
+                              <dt>Total placement fee</dt>
+                              <dd>{formatCurrency(position.totalPlacementFee)}</dd>
+                            </div>
+                            <div>
+                              <dt>Monthly instalment for this position</dt>
+                              <dd>{formatCurrency(position.totalInstalment)}</dd>
+                            </div>
+                            <div>
+                              <dt>Activation fee for this position</dt>
+                              <dd>{formatCurrency(ACTIVATION_FEE)}</dd>
+                            </div>
+                            <div>
+                              <dt>Activation credit on first invoice</dt>
+                              <dd>−{formatCurrency(position.activationCreditApplied)}</dd>
+                            </div>
+                            <div className="fee-calculator-position-result__first-invoice">
+                              <dt>First invoice after credit</dt>
+                              <dd>{formatCurrency(position.firstInvoiceAfterCredit)}</dd>
+                            </div>
+                          </dl>
+                          {input && <StartJobOrderButton position={input} />}
+                        </article>
+                      )
+                    })}
                   </div>
 
                   <dl className="fee-calculator-breakdown">
