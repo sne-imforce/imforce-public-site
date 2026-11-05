@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useLayoutEffect } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import Navbar from '../../components/public/Navbar'
 import { industries } from '../../data/industries'
 import './About.css'
@@ -26,6 +26,8 @@ const approachSteps = [
 ]
 
 function About() {
+  const location = useLocation()
+
   useEffect(() => {
     const previousTitle = document.title
     const description = document.querySelector<HTMLMetaElement>(
@@ -46,6 +48,14 @@ function About() {
       }
     }
   }, [])
+
+  useLayoutEffect(() => {
+    if (!location.hash.startsWith('#industry-')) return
+
+    document
+      .getElementById(decodeURIComponent(location.hash.slice(1)))
+      ?.scrollIntoView({ block: 'start' })
+  }, [location.hash])
 
   return (
     <>

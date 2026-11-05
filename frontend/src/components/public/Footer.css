@@ -7,8 +7,8 @@
 .global-footer__inner {
   width: min(1200px, 100%);
   display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(140px, 1fr));
-  gap: 48px;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(130px, 1fr));
+  gap: 36px;
   margin: 0 auto;
   padding-bottom: 42px;
 }

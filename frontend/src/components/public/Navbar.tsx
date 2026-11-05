@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FiChevronDown, FiMenu, FiX } from 'react-icons/fi'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import imforceLogo from '../../assets/High_Res_Logo-removebg-preview.png'
 import { industries } from '../../data/industries'
 import './Navbar.css'
@@ -38,8 +38,16 @@ const aboutDropdown = {
 const certificatesDropdown = {
   label: 'Certificates',
   items: [
-    { id: 'certificates', label: 'Certificates', href: '/certifications' },
-    { id: 'credentials', label: 'Credentials', href: '/credentials' },
+    {
+      id: 'certificates',
+      label: 'Certifications',
+      href: '/certifications#certifications',
+    },
+    {
+      id: 'credentials',
+      label: 'Credentials',
+      href: '/certifications#credentials',
+    },
   ],
 }
 
@@ -96,14 +104,14 @@ function NavbarDropdown({
       </button>
       <div className="navbar__dropdown-panel" id={id} hidden={!isOpen}>
         {items.map((item) => (
-          <a
+          <Link
             className={`navbar__dropdown-link${isActive(item.href) ? ' is-active' : ''}`}
-            href={item.href}
+            to={item.href}
             key={item.id}
             onClick={onNavigate}
           >
             {item.label}
-          </a>
+          </Link>
         ))}
       </div>
     </div>

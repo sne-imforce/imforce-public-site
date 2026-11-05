@@ -29,9 +29,19 @@ function Footer() {
           <h2>Explore</h2>
           <Link to="/">Home</Link>
           <Link to="/about">About us</Link>
+          <Link to="/services/placements">Permanent staffing</Link>
           <Link to="/employers">For employers</Link>
           <Link to="/careers">Careers</Link>
           <Link to="/fee-calculator">Fee calculator</Link>
+        </nav>
+
+        <nav
+          className="global-footer__nav"
+          aria-label="Certifications and credentials"
+        >
+          <h2>Certifications &amp; credentials</h2>
+          <Link to="/certifications#certifications">Certifications</Link>
+          <Link to="/certifications#credentials">Credentials</Link>
         </nav>
 
         <div className="global-footer__contact">
