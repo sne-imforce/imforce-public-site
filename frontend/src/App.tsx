@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Footer from './components/public/Footer'
 import About from './pages/public site/About'
 import Careers from './pages/public site/Careers'
+import Contact from './pages/public site/Contact'
 import FeeCalculator from './pages/public site/Fee Calculator'
 import Home from './pages/public site/Home'
 import Placement from './pages/public site/Placement'
@@ -16,6 +17,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/about" element={<About />} />
         <Route path="/careers" element={<Careers />} />
+        <Route path="/contact" element={<Contact />} />
         <Route path="/employers" element={<Employers />} />
         <Route path="/services/placements" element={<Placement />} />
         <Route path="/certifications" element={<Certifications />} />
