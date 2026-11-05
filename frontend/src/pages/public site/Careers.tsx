@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FiSearch } from 'react-icons/fi'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../../components/public/Navbar'
+import { getIndustryBySlug, industries } from '../../data/industries'
 import { recentVacancies, urgentVacancies, type Vacancy } from '../../data/vacancies'
 import './Careers.css'
 
@@ -11,12 +13,14 @@ const employmentTypes = [...new Set(vacancies.map((vacancy) => vacancy.employmen
 const filterStorageKey = 'imforce-careers-filters'
 
 type Filters = {
+  industry: string
   category: string
   location: string
   employmentType: string
 }
 
 const defaultFilters: Filters = {
+  industry: 'all',
   category: 'all',
   location: 'all',
   employmentType: 'all',
@@ -32,15 +36,30 @@ function getSecureApplicationUrl(value: string) {
 }
 
 function loadSavedFilters(): Filters {
+  const industryFromUrl = getIndustryBySlug(
+    new URLSearchParams(window.location.search).get('industry'),
+  )
+  const defaultWithUrlIndustry = {
+    ...defaultFilters,
+    industry: industryFromUrl?.name ?? defaultFilters.industry,
+  }
+
   try {
     const saved = window.localStorage.getItem(filterStorageKey)
-    if (!saved) return defaultFilters
+    if (!saved) return defaultWithUrlIndustry
 
     const parsed: unknown = JSON.parse(saved)
-    if (typeof parsed !== 'object' || parsed === null) return defaultFilters
+    if (typeof parsed !== 'object' || parsed === null) return defaultWithUrlIndustry
 
     const stored = parsed as Record<string, unknown>
     return {
+      industry:
+        industryFromUrl?.name ??
+        (typeof stored.industry === 'string' &&
+        (stored.industry === 'all' ||
+          industries.some((industry) => industry.name === stored.industry))
+          ? stored.industry
+          : 'all'),
       category:
         typeof stored.category === 'string' &&
         (stored.category === 'all' || categories.includes(stored.category))
@@ -60,11 +79,13 @@ function loadSavedFilters(): Filters {
     }
   } catch (error) {
     console.error('Unable to load saved careers filters.', error)
-    return defaultFilters
+    return defaultWithUrlIndustry
   }
 }
 
 function Careers() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Filters>(loadSavedFilters)
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null)
@@ -79,6 +100,15 @@ function Careers() {
     redirectCountdown === 0 && !secureApplicationUrl
       ? 'The Nexora AI link for this role is not ready yet. Please contact IMFORCE for help.'
       : ''
+
+  useEffect(() => {
+    if (location.hash !== '#vacancies') return
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      document.getElementById('vacancies')?.scrollIntoView()
+    })
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [location.hash])
 
   useEffect(() => {
     const previousTitle = document.title
@@ -157,6 +187,8 @@ function Careers() {
 
       return (
         matchesSearch &&
+        (filters.industry === 'all' ||
+          vacancy.industry === filters.industry) &&
         (filters.category === 'all' || vacancy.category === filters.category) &&
         (filters.location === 'all' || vacancy.location === filters.location) &&
         (filters.employmentType === 'all' ||
@@ -180,6 +212,9 @@ function Careers() {
   const resetFilters = () => {
     setSearch('')
     setFilters(defaultFilters)
+    if (location.search) {
+      navigate(`${location.pathname}${location.hash}`, { replace: true })
+    }
   }
 
   return (
@@ -249,6 +284,26 @@ function Careers() {
                   placeholder="Job title, category or keyword"
                 />
               </span>
+            </label>
+
+            <label>
+              <span>Industry</span>
+              <select
+                value={filters.industry}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    industry: event.target.value,
+                  }))
+                }
+              >
+                <option value="all">All industries</option>
+                {industries.map((industry) => (
+                  <option value={industry.name} key={industry.slug}>
+                    {industry.name}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label>

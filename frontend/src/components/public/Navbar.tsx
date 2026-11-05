@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FiChevronDown, FiMenu, FiX } from 'react-icons/fi'
 import { useLocation } from 'react-router-dom'
 import imforceLogo from '../../assets/High_Res_Logo-removebg-preview.png'
+import { industries } from '../../data/industries'
 import './Navbar.css'
 
 type LinkItem = {
@@ -22,28 +23,14 @@ const navigationLinks: LinkItem[] = [
   { label: 'Contact', href: '/contact' },
 ]
 
-const industries = [
-  'Manufacturing',
-  'FMCG',
-  'Hospitality',
-  'Retail',
-  'Engineering',
-  'Finance',
-  'Security',
-  'Logistics',
-  'IT',
-]
-
 const aboutDropdown = {
   label: 'About',
   items: [
     { id: 'about', label: 'About IMFORCE', href: '/about' },
-    { id: 'about-fee-calculator', label: 'IMFORCE Fee Calculator', href: '/fee-calculator' },
-    { id: 'about-careers', label: 'Careers', href: '/careers' },
-    ...industries.map((industry) => ({
-      id: `industry-${industry.toLowerCase()}`,
-      label: industry,
-      href: `/about#industry-${industry.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    ...industries.map(({ name, slug }) => ({
+      id: `industry-${slug}`,
+      label: name,
+      href: `/about#industry-${slug}`,
     })),
   ],
 }

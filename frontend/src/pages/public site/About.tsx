@@ -1,25 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import Navbar from '../../components/public/Navbar'
+import { industries } from '../../data/industries'
 import './About.css'
-
-const industries = [
-  'Manufacturing',
-  'FMCG',
-  'Hospitality',
-  'Retail',
-  'Engineering',
-  'Finance',
-  'Security',
-  'Logistics',
-  'IT',
-]
-
-const getIndustrySlug = (industry: string) =>
-  industry.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-
-const getIndustryFromHash = (hash: string) =>
-  industries.find((industry) => `#industry-${getIndustrySlug(industry)}` === hash) ?? ''
 
 const approachSteps = [
   {
@@ -43,12 +26,6 @@ const approachSteps = [
 ]
 
 function About() {
-  const location = useLocation()
-  const [selectedIndustry, setSelectedIndustry] = useState(() =>
-    getIndustryFromHash(window.location.hash),
-  )
-  const industriesDropdownRef = useRef<HTMLDetailsElement>(null)
-
   useEffect(() => {
     const previousTitle = document.title
     const description = document.querySelector<HTMLMetaElement>(
@@ -56,10 +33,10 @@ function About() {
     )
     const previousDescription = description?.content
 
-    document.title = 'About IMFORCE Consolidated | People-first recruitment'
+    document.title = 'About IMFORCE | Recruitment Across South African Industries'
     if (description) {
       description.content =
-        'Learn about IMFORCE Consolidated, a South African recruitment company focused on permanent staffing and placement.'
+        'Learn how IMFORCE Consolidated helps candidates explore permanent recruitment opportunities across manufacturing, FMCG, hospitality, retail, engineering, finance, security, logistics and IT.'
     }
 
     return () => {
@@ -68,34 +45,6 @@ function About() {
         description.content = previousDescription
       }
     }
-  }, [])
-
-  useEffect(() => {
-    const industry = getIndustryFromHash(location.hash)
-    if (!industry) return
-
-    industriesDropdownRef.current?.setAttribute('open', '')
-    const optionId = `industry-${getIndustrySlug(industry)}`
-    const animationFrame = window.requestAnimationFrame(() => {
-      document.getElementById(optionId)?.scrollIntoView({ block: 'center' })
-    })
-
-    return () => window.cancelAnimationFrame(animationFrame)
-  }, [location.hash])
-
-  useEffect(() => {
-    const selectIndustryFromHash = () => {
-      const industry = getIndustryFromHash(window.location.hash)
-      if (!industry) return
-
-      setSelectedIndustry(industry)
-      if (industriesDropdownRef.current) {
-        industriesDropdownRef.current.open = true
-      }
-    }
-
-    window.addEventListener('hashchange', selectIndustryFromHash)
-    return () => window.removeEventListener('hashchange', selectIndustryFromHash)
   }, [])
 
   return (
@@ -180,52 +129,43 @@ function About() {
           </div>
         </section>
 
-        <section className="about-industries about-shell" aria-labelledby="industries-title">
+        <section
+          className="about-industries about-shell"
+          aria-labelledby="industries-title"
+        >
           <div className="about-industries__intro">
             <p className="about-eyebrow about-eyebrow--blue">Industry context</p>
-            <h2 id="industries-title">Recruitment shaped by the work.</h2>
+            <h2 id="industries-title">
+              Explore recruitment across different industries.
+            </h2>
             <p>
-              IMFORCE supports recruitment across a range of industries. Explore
-              the areas we work in.
+              IMFORCE focuses on permanent staffing. For each industry, learn
+              how candidates can understand role requirements and explore
+              relevant opportunities. Role examples are for guidance only and
+              are not live vacancies.
             </p>
           </div>
-          <details
-            className="about-industries__dropdown"
-            ref={industriesDropdownRef}
-          >
-            <summary>
-              <span>
-                <span className="about-industries__label">Explore industries</span>
-                <span className="about-industries__selection">
-                  {selectedIndustry || 'Choose an industry'}
-                </span>
-              </span>
-              <span className="about-industries__count">9 areas</span>
-            </summary>
-            <fieldset className="about-industries__options">
-              <legend>Select an industry</legend>
-              {industries.map((industry) => (
-                <label
-                  className="about-industries__option"
-                  id={`industry-${getIndustrySlug(industry)}`}
-                  key={industry}
+          <div className="about-industries__grid">
+            {industries.map((industry) => (
+              <article
+                className="about-industry"
+                id={`industry-${industry.slug}`}
+                key={industry.slug}
+              >
+                <h3>{industry.name} recruitment</h3>
+                <p>{industry.candidateHelp}</p>
+                <p className="about-industry__examples">
+                  {industry.roleExamples}
+                </p>
+                <Link
+                  className="about-industry__link"
+                  to={`/careers?industry=${industry.slug}#vacancies`}
                 >
-                  <input
-                    type="radio"
-                    name="industry"
-                    value={industry}
-                    checked={selectedIndustry === industry}
-                    onChange={() => setSelectedIndustry(industry)}
-                  />
-                  <span>{industry}</span>
-                </label>
-              ))}
-            </fieldset>
-            <p>
-              Industry areas include manufacturing, FMCG, hospitality, retail,
-              engineering, finance, security, logistics and IT.
-            </p>
-          </details>
+                  Explore {industry.name} jobs
+                </Link>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="about-focus">

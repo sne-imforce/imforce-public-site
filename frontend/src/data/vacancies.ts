@@ -1,8 +1,11 @@
+import type { IndustryName } from './industries'
+
 export type Vacancy = {
   id: string
   title: string
   location: string
   region: string
+  industry?: IndustryName
   category: string
   employmentType: string
   posted: string
@@ -34,6 +37,7 @@ export const urgentVacancies: Vacancy[] = [
     title: 'Sample: Finance Administrator',
     location: 'Durban (sample location)',
     region: 'KwaZulu-Natal',
+    industry: 'Finance',
     category: 'Finance',
     employmentType: 'Contract',
     posted: 'Urgent opportunity',
@@ -88,6 +92,7 @@ export const recentVacancies: Vacancy[] = [
     title: 'Sample: Engineering Technician',
     location: 'Pretoria (sample location)',
     region: 'Gauteng',
+    industry: 'Engineering',
     category: 'Engineering',
     employmentType: 'Permanent',
     posted: 'Recently added',
