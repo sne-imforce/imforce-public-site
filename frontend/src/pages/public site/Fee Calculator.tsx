@@ -520,15 +520,6 @@ function FeeCalculator() {
           </aside>
         </section>
       </main>
-      <footer className="fee-calculator-footer">
-        <div className="fee-calculator-shell fee-calculator-footer__inner">
-          <Link to="/" className="fee-calculator-footer__brand">
-            IMFORCE <span>CONSOLIDATED</span>
-          </Link>
-          <p>Permanent staffing and placement in South Africa.</p>
-          <a href="mailto:info@imforce.co.za">info@imforce.co.za</a>
-        </div>
-      </footer>
     </>
   )
 }

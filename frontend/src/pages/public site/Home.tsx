@@ -1,3 +1,4 @@
+import heroImage from '../../assets/Circular_logo-removebg-preview.png'
 import Hero from '../../components/public/Hero'
 import JobsAndInsights from '../../components/public/JobsAndInsights'
 import Navbar from '../../components/public/Navbar'
@@ -7,7 +8,7 @@ function Home() {
     <>
       <Navbar />
       <main>
-        <Hero />
+        <Hero imageSrc={heroImage} />
         <JobsAndInsights />
       </main>
     </>

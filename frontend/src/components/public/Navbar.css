@@ -28,17 +28,15 @@
   display: grid;
   flex: 0 0 165px;
   place-items: center;
-  overflow: hidden;
-  border-radius: 9px;
-  background: #fff;
 }
 
 .navbar__brand img {
   width: 100%;
   height: 62px;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
+  filter: brightness(0) invert(1);
 }
 
 .navbar__desktop-nav {
@@ -60,7 +58,7 @@
   background: transparent;
   color: #fff;
   font-family: var(--font-interface);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.25;
   text-decoration: none;
@@ -126,7 +124,7 @@
 
 .navbar__chevron {
   flex: 0 0 auto;
-  font-size: 14px;
+  font-size: 15px;
   transition: transform 180ms ease;
 }
 
@@ -166,7 +164,7 @@
   border-radius: 5px;
   color: #111827;
   font-family: var(--font-interface);
-  font-size: 14px;
+  font-size: 15px;
   text-decoration: none;
 }
 
@@ -241,7 +239,7 @@
     justify-content: space-between;
     padding: 0 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.18);
-    font-size: 16px;
+    font-size: 17px;
     white-space: normal;
   }
 
@@ -288,7 +286,7 @@
   .navbar__mobile-nav .navbar__dropdown-link {
     min-height: 46px;
     color: #e3edf9;
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .navbar__mobile-nav .navbar__dropdown-link:hover,

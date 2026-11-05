@@ -48,7 +48,7 @@
   max-width: 690px;
   margin: 0;
   color: #d6e3f6;
-  font: 400 17px/1.8 var(--font-body);
+  font: 400 18px/1.8 var(--font-body);
 }
 
 .about-hero__actions,
@@ -67,7 +67,7 @@
   padding: 0 22px;
   border: 1px solid transparent;
   border-radius: 999px;
-  font: 600 13px/1.2 var(--font-interface);
+  font: 600 14px/1.2 var(--font-interface);
   text-decoration: none;
   transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
@@ -189,7 +189,7 @@
 .about-intro__copy p {
   margin: 0;
   color: #4c5a68;
-  font: 400 14px/1.85 var(--font-body);
+  font: 400 15px/1.85 var(--font-body);
 }
 
 .about-intro__copy p + p {
@@ -212,7 +212,7 @@
 .about-tenure span {
   margin-top: 8px;
   color: #506174;
-  font: 600 11px/1.4 var(--font-interface);
+  font: 600 12px/1.4 var(--font-interface);
 }
 
 .about-approach {
@@ -228,7 +228,7 @@
 .about-section-heading > p:last-child {
   margin: 13px 0 0;
   color: #526478;
-  font: 400 14px/1.75 var(--font-body);
+  font: 400 15px/1.75 var(--font-body);
 }
 
 .about-steps {
@@ -249,19 +249,19 @@
 
 .about-step__number {
   color: var(--color-accent);
-  font: 500 13px/1.5 var(--font-numbers);
+  font: 500 14px/1.5 var(--font-numbers);
 }
 
 .about-step h3 {
   margin: 18px 0 9px;
   color: var(--color-primary);
-  font: 700 16px/1.45 var(--font-heading);
+  font: 700 17px/1.45 var(--font-heading);
 }
 
 .about-step p {
   margin: 0;
   color: #526478;
-  font: 400 12px/1.75 var(--font-body);
+  font: 400 13px/1.75 var(--font-body);
 }
 
 .about-industries {
@@ -276,7 +276,7 @@
 .about-industries__intro > p:last-child {
   margin: 14px 0 0;
   color: #526478;
-  font: 400 13px/1.75 var(--font-body);
+  font: 400 14px/1.75 var(--font-body);
 }
 
 .about-industries__dropdown {
@@ -297,7 +297,7 @@
   padding: 12px 14px;
   border-radius: 10px;
   color: var(--color-primary);
-  font: 600 14px/1.4 var(--font-interface);
+  font: 600 15px/1.4 var(--font-interface);
   cursor: pointer;
   list-style: none;
 }
@@ -326,7 +326,7 @@
 
 .about-industries__selection {
   color: #647589;
-  font: 400 11px/1.4 var(--font-interface);
+  font: 400 12px/1.4 var(--font-interface);
 }
 
 .about-industries__count {
@@ -335,7 +335,7 @@
   border-radius: 999px;
   background: #eef3fa;
   color: #314d6b;
-  font: 600 10px/1.2 var(--font-interface);
+  font: 600 11px/1.2 var(--font-interface);
 }
 
 .about-industries__options {
@@ -352,7 +352,7 @@
 .about-industries__options legend {
   padding: 0 6px;
   color: #526478;
-  font: 600 11px/1.4 var(--font-interface);
+  font: 600 12px/1.4 var(--font-interface);
 }
 
 .about-industries__option {
@@ -365,7 +365,7 @@
   border-radius: 9px;
   background: #fff;
   color: #314d6b;
-  font: 500 11px/1.4 var(--font-interface);
+  font: 500 12px/1.4 var(--font-interface);
   cursor: pointer;
   transition: border-color 160ms ease, background-color 160ms ease,
     box-shadow 160ms ease;
@@ -399,7 +399,7 @@
 .about-industries__dropdown > p {
   margin: 0 14px 12px;
   color: #657487;
-  font: 400 11px/1.6 var(--font-body);
+  font: 400 12px/1.6 var(--font-body);
 }
 
 .about-focus {
@@ -420,7 +420,7 @@
   max-width: 710px;
   margin: 17px 0 0;
   color: #d6e3f6;
-  font: 400 14px/1.8 var(--font-body);
+  font: 400 15px/1.8 var(--font-body);
 }
 
 .about-contact {
@@ -468,7 +468,7 @@
 .about-footer__inner > a:last-child {
   margin: 0;
   color: #d6e3f6;
-  font: 400 11px/1.5 var(--font-body);
+  font: 400 12px/1.5 var(--font-body);
 }
 
 .about-footer__inner > a:last-child {
@@ -492,7 +492,7 @@
   }
 
   .about-hero__description {
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .about-hero__decoration {

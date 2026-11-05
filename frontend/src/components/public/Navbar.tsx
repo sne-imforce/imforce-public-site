@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FiChevronDown, FiMenu, FiX } from 'react-icons/fi'
 import { useLocation } from 'react-router-dom'
-import imforceLogo from '../../assets/imforce logo image.webp'
+import imforceLogo from '../../assets/High_Res_Logo-removebg-preview.png'
 import './Navbar.css'
 
 type LinkItem = {

@@ -259,15 +259,6 @@ function About() {
           </Link>
         </section>
       </main>
-      <footer className="about-footer">
-        <div className="about-shell about-footer__inner">
-          <Link to="/" className="about-footer__brand">
-            IMFORCE <span>CONSOLIDATED</span>
-          </Link>
-          <p>Permanent staffing and placement in South Africa.</p>
-          <a href="mailto:info@imforce.co.za">info@imforce.co.za</a>
-        </div>
-      </footer>
     </>
   )
 }
