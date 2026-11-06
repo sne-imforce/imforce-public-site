@@ -153,21 +153,6 @@ function StaffAccessModal() {
                 setSnackbarMessage('')
                 const form = event.currentTarget
                 const formData = new FormData(form)
-                const applicationUrl = String(
-                  formData.get('applicationUrl') ?? '',
-                ).trim()
-                let secureApplicationUrl: string
-
-                try {
-                  const parsedUrl = new URL(applicationUrl)
-                  if (parsedUrl.protocol !== 'https:') {
-                    throw new Error('Application links must use HTTPS.')
-                  }
-                  secureApplicationUrl = parsedUrl.href
-                } catch {
-                  setPostError('Enter a valid HTTPS Nexora AI application link.')
-                  return
-                }
 
                 const responsibilities = String(
                   formData.get('responsibilities') ?? '',
@@ -201,7 +186,7 @@ function StaffAccessModal() {
                       formData.get('employmentType') ?? '',
                     ),
                     salary,
-                    applicationUrl: secureApplicationUrl,
+                    applicationUrl: null,
                     summary: String(formData.get('summary') ?? '').trim(),
                     responsibilities,
                   })
@@ -306,15 +291,6 @@ function StaffAccessModal() {
                   <input
                     name="salary"
                     placeholder="For example, R20,000 to R25,000 per month"
-                    required
-                  />
-                </label>
-                <label className="staff-access-fields__wide">
-                  Nexora AI application URL
-                  <input
-                    name="applicationUrl"
-                    type="url"
-                    placeholder="https://..."
                     required
                   />
                 </label>

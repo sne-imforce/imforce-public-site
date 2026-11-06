@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { FiSearch } from 'react-icons/fi'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  FiArrowRight,
+  FiBriefcase,
+  FiCalendar,
+  FiDollarSign,
+  FiMapPin,
+  FiSearch,
+} from 'react-icons/fi'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../../components/public/Navbar'
 import { getIndustryBySlug, industries } from '../../data/industries'
@@ -7,7 +14,12 @@ import {
   getRecruiterVacancies,
   useRecruiterVacancies,
 } from '../../data/recruiterVacancies'
-import { recentVacancies, urgentVacancies, type Vacancy } from '../../data/vacancies'
+import {
+  nexoraAiApplicationUrl,
+  recentVacancies,
+  urgentVacancies,
+  type Vacancy,
+} from '../../data/vacancies'
 import './Careers.css'
 
 const filterStorageKey = 'imforce-careers-filters'
@@ -114,16 +126,41 @@ function Careers() {
   )
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null)
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null)
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const applicationUrl = selectedVacancy?.applicationUrl
-  const secureApplicationUrl = applicationUrl
-    ? getSecureApplicationUrl(applicationUrl)
-    : null
+  const applicationUrl = selectedVacancy?.applicationUrl ?? nexoraAiApplicationUrl
+  const secureApplicationUrl = getSecureApplicationUrl(applicationUrl)
   const redirectMessage =
     redirectCountdown === 0 && !secureApplicationUrl
       ? 'The Nexora AI link for this role is not ready yet. Please contact IMFORCE for help.'
       : ''
+  const filteredVacancies = useMemo(() => {
+    const query = search.trim().toLowerCase()
+
+    return vacancies.filter((vacancy) => {
+      const matchesSearch =
+        !query ||
+        [
+          vacancy.title,
+          vacancy.location,
+          vacancy.region,
+          vacancy.category,
+          vacancy.employmentType,
+          vacancy.summary,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(query)
+
+      return (
+        matchesSearch &&
+        (filters.industry === 'all' ||
+          vacancy.industry === filters.industry) &&
+        (filters.category === 'all' || vacancy.category === filters.category) &&
+        (filters.location === 'all' || vacancy.location === filters.location) &&
+        (filters.employmentType === 'all' ||
+          vacancy.employmentType === filters.employmentType)
+      )
+    })
+  }, [filters, search, vacancies])
 
   useEffect(() => {
     if (location.hash !== '#vacancies') return
@@ -164,10 +201,22 @@ function Careers() {
   }, [filters])
 
   useEffect(() => {
-    if (selectedVacancy && dialogRef.current && !dialogRef.current.open) {
-      dialogRef.current.showModal()
-    }
+    setRedirectCountdown(null)
   }, [selectedVacancy])
+
+  useEffect(() => {
+    if (filteredVacancies.length === 0) {
+      setSelectedVacancy(null)
+      return
+    }
+
+    if (
+      !selectedVacancy ||
+      !filteredVacancies.some((vacancy) => vacancy.id === selectedVacancy.id)
+    ) {
+      setSelectedVacancy(filteredVacancies[0])
+    }
+  }, [filteredVacancies, selectedVacancy])
 
   useEffect(() => {
     if (redirectCountdown === null || redirectCountdown === 0) return
@@ -182,56 +231,46 @@ function Careers() {
   }, [redirectCountdown])
 
   useEffect(() => {
-    if (redirectCountdown !== 0 || !applicationUrl) return
+    if (redirectCountdown !== 0) return
     if (!secureApplicationUrl) {
       console.error('The Nexora AI application link must be a valid HTTPS URL.')
       return
     }
 
     window.location.assign(secureApplicationUrl)
-  }, [applicationUrl, redirectCountdown, secureApplicationUrl])
+  }, [redirectCountdown, secureApplicationUrl])
 
-  const filteredVacancies = useMemo(() => {
-    const query = search.trim().toLowerCase()
-
-    return vacancies.filter((vacancy) => {
-      const matchesSearch =
-        !query ||
-        [
-          vacancy.title,
-          vacancy.location,
-          vacancy.region,
-          vacancy.category,
-          vacancy.employmentType,
-          vacancy.summary,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(query)
-
-      return (
-        matchesSearch &&
-        (filters.industry === 'all' ||
-          vacancy.industry === filters.industry) &&
-        (filters.category === 'all' || vacancy.category === filters.category) &&
-        (filters.location === 'all' || vacancy.location === filters.location) &&
-        (filters.employmentType === 'all' ||
-          vacancy.employmentType === filters.employmentType)
-      )
-    })
-  }, [filters, search, vacancies])
-
-  const openVacancy = (vacancy: Vacancy, trigger: HTMLButtonElement) => {
-    triggerRef.current = trigger
-    setRedirectCountdown(null)
+  const handleSelectVacancy = (vacancy: Vacancy) => {
     setSelectedVacancy(vacancy)
+    const vacancyAnchor = `job-${vacancy.id}`
+    if (window.location.hash !== `#${vacancyAnchor}`) {
+      window.history.replaceState(null, '', `${window.location.pathname}#${vacancyAnchor}`)
+    }
+    window.requestAnimationFrame(() => {
+      document.getElementById(vacancyAnchor)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      })
+    })
   }
 
-  const closeDialog = () => {
-    setSelectedVacancy(null)
-    setRedirectCountdown(null)
-    window.requestAnimationFrame(() => triggerRef.current?.focus())
-  }
+  useEffect(() => {
+    const hashVacancyId = window.location.hash.startsWith('#job-')
+      ? window.location.hash.slice(5)
+      : null
+
+    if (!hashVacancyId) {
+      if (!selectedVacancy && filteredVacancies.length > 0) {
+        setSelectedVacancy(filteredVacancies[0])
+      }
+      return
+    }
+
+    const matchingVacancy = vacancies.find((vacancy) => vacancy.id === hashVacancyId)
+    if (matchingVacancy) {
+      setSelectedVacancy(matchingVacancy)
+    }
+  }, [filteredVacancies, selectedVacancy, vacancies])
 
   const resetFilters = () => {
     setSearch('')
@@ -387,46 +426,143 @@ function Careers() {
           </div>
 
           {filteredVacancies.length > 0 ? (
-            <div className="careers-grid">
-              {filteredVacancies.map((vacancy) => {
-                const isUrgent = urgentVacancies.some(
-                  (urgent) => urgent.id === vacancy.id,
-                )
+            <div className="careers-layout">
+              <div className="careers-job-list" role="list">
+                {filteredVacancies.map((vacancy) => {
+                  const isSelected = selectedVacancy?.id === vacancy.id
 
-                return (
-                  <article className="careers-card" key={vacancy.id}>
-                    <div className="careers-card__badges">
-                      <span>
-                        {vacancy.source === 'recruiter'
-                          ? 'Recruiter post · preview'
-                          : isUrgent
-                            ? 'Urgent example'
-                            : 'Recent example'}
-                      </span>
-                      <span>
-                        {vacancy.source === 'recruiter'
-                          ? 'Internal client vacancy'
-                          : 'Sample role'}
-                      </span>
-                    </div>
-                    <h3>{vacancy.title}</h3>
-                    <p className="careers-card__category">{vacancy.category}</p>
-                    <p className="careers-card__summary">{vacancy.summary}</p>
-                    <div className="careers-card__meta">
-                      <span>{vacancy.location}</span>
-                      <span>{vacancy.region}</span>
-                      <span>{vacancy.employmentType}</span>
-                      {vacancy.salary && <span>{vacancy.salary}</span>}
-                    </div>
+                  return (
                     <button
+                      id={`job-${vacancy.id}`}
+                      key={vacancy.id}
                       type="button"
-                      onClick={(event) => openVacancy(vacancy, event.currentTarget)}
+                      className={`careers-job-card${isSelected ? ' careers-job-card--selected' : ''}`}
+                      onClick={() => handleSelectVacancy(vacancy)}
                     >
-                      View role details
+                      <span className="careers-job-card__location">
+                        <FiMapPin aria-hidden="true" />
+                        {vacancy.location}
+                      </span>
+
+                      <h3>{vacancy.title}</h3>
+
+                      <div className="careers-job-card__meta">
+                        <span>
+                          <FiBriefcase aria-hidden="true" />
+                          {vacancy.employmentType}
+                        </span>
+                        {vacancy.salary && (
+                          <span>
+                            <FiDollarSign aria-hidden="true" />
+                            {vacancy.salary}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="careers-job-card__summary">{vacancy.summary}</p>
+
+                      <div className="careers-job-card__footer">
+                        <span className="careers-job-card__cta">
+                          View vacancy details
+                        </span>
+                        <span className="careers-job-card__date">
+                          <FiCalendar aria-hidden="true" />
+                          {vacancy.posted}
+                        </span>
+                        <span className="careers-job-card__chevron">
+                          <FiArrowRight aria-hidden="true" />
+                        </span>
+                      </div>
                     </button>
-                  </article>
-                )
-              })}
+                  )
+                })}
+              </div>
+
+              <aside className="careers-detail" aria-live="polite">
+                {selectedVacancy ? (
+                  <>
+                    <div className="careers-detail__header">
+                      <p className="careers-detail__eyebrow">
+                        {selectedVacancy.category}
+                      </p>
+                      <h2>{selectedVacancy.title}</h2>
+
+                      <div className="careers-detail__meta">
+                        <span>
+                          <FiMapPin aria-hidden="true" />
+                          {selectedVacancy.location}
+                        </span>
+                        <span>
+                          <FiBriefcase aria-hidden="true" />
+                          {selectedVacancy.employmentType}
+                        </span>
+                        {selectedVacancy.salary && (
+                          <span>
+                            <FiDollarSign aria-hidden="true" />
+                            {selectedVacancy.salary}
+                          </span>
+                        )}
+                        <span>
+                          <FiCalendar aria-hidden="true" />
+                          {selectedVacancy.posted}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="careers-detail__actions">
+                      <button
+                        className="careers-detail__apply"
+                        type="button"
+                        onClick={() => {
+                          setRedirectCountdown(5)
+                        }}
+                      >
+                        Apply now
+                      </button>
+                    </div>
+
+                    <a href="#signin" className="careers-detail__signin">
+                      Have an account? Sign In
+                    </a>
+
+                    <section className="careers-detail__section">
+                      <h3>Role description</h3>
+                      <p>{selectedVacancy.summary}</p>
+
+                      {selectedVacancy.responsibilities.length > 0 && (
+                        <>
+                          <h4>Responsibilities</h4>
+                          <ul>
+                            {selectedVacancy.responsibilities.map(
+                              (responsibility) => (
+                                <li key={responsibility}>{responsibility}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      )}
+                    </section>
+
+                    {redirectCountdown !== null && (
+                      <div className="careers-redirect__countdown">
+                        Redirecting in {redirectCountdown}s...
+                      </div>
+                    )}
+
+                    {redirectMessage && (
+                      <p className="careers-redirect__message">{redirectMessage}</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="careers-empty careers-empty--detail">
+                    <h3>No matching roles</h3>
+                    <p>Try a different search or clear your filters.</p>
+                    <button type="button" onClick={resetFilters}>
+                      Clear filters
+                    </button>
+                  </div>
+                )}
+              </aside>
             </div>
           ) : (
             <div className="careers-empty">
@@ -439,103 +575,6 @@ function Careers() {
           )}
         </section>
       </main>
-
-      <dialog
-        className="careers-dialog"
-        ref={dialogRef}
-        aria-labelledby="careers-dialog-title"
-        onClose={closeDialog}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            dialogRef.current?.close()
-          }
-        }}
-        onClick={(event) => {
-          if (event.target === dialogRef.current) dialogRef.current?.close()
-        }}
-      >
-        {selectedVacancy && (
-          <div className="careers-dialog__content">
-            <button
-              className="careers-dialog__close"
-              type="button"
-              onClick={() => dialogRef.current?.close()}
-            >
-              Close
-            </button>
-
-            {redirectCountdown !== null ? (
-              <>
-                <p className="careers-eyebrow careers-eyebrow--blue">
-                  Apply on Nexora AI
-                </p>
-                <h2 id="careers-dialog-title">You are going to another website</h2>
-                <p className="careers-dialog__intro">
-                  You will leave IMFORCE and apply on Nexora AI.
-                </p>
-                {redirectMessage ? (
-                  <p className="careers-redirect__message" role="status">
-                    {redirectMessage}
-                  </p>
-                ) : (
-                  <p className="careers-redirect__countdown" role="status" aria-live="polite">
-                    Opening in {redirectCountdown} seconds
-                  </p>
-                )}
-                <button
-                  className="careers-redirect__cancel"
-                  type="button"
-                  onClick={() => {
-                    setRedirectCountdown(null)
-                  }}
-                >
-                  {redirectMessage ? 'Back to role details' : 'Cancel'}
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="careers-eyebrow careers-eyebrow--blue">
-                  {selectedVacancy.source === 'recruiter'
-                    ? 'Client vacancy preview'
-                    : 'Sample vacancy'}{' '}
-                  | {selectedVacancy.category}
-                </p>
-                <h2 id="careers-dialog-title">{selectedVacancy.title}</h2>
-                <div className="careers-dialog__meta">
-                  <span>{selectedVacancy.location}</span>
-                  <span>{selectedVacancy.region}</span>
-                  <span>{selectedVacancy.employmentType}</span>
-                  {selectedVacancy.salary && (
-                    <span>{selectedVacancy.salary}</span>
-                  )}
-                </div>
-                <p>{selectedVacancy.summary}</p>
-                <h3>Key responsibilities</h3>
-                <ul>
-                  {selectedVacancy.responsibilities.map((responsibility) => (
-                    <li key={responsibility}>{responsibility}</li>
-                  ))}
-                </ul>
-                <p className="careers-dialog__notice">
-                  {selectedVacancy.source === 'recruiter'
-                    ? 'Prototype post: this vacancy is saved only in this browser. Applications are not submitted or stored.'
-                    : 'This is an illustrative sample, not an active vacancy.'}
-                </p>
-                <button
-                  className="careers-dialog__apply"
-                  type="button"
-                  onClick={() => {
-                    setRedirectCountdown(5)
-                  }}
-                >
-                  Apply on Nexora AI
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </dialog>
     </>
   )
 }

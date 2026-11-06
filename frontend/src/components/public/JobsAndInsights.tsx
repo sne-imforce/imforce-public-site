@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useRecruiterVacancies } from '../../data/recruiterVacancies'
-import { recentVacancies, urgentVacancies, type Vacancy } from '../../data/vacancies'
+import {
+  recentVacancies,
+  type Vacancy,
+  urgentVacancies,
+} from '../../data/vacancies'
 import './JobsAndInsights.css'
 
 const insightCards = [
@@ -54,7 +58,7 @@ const imforceHighlights = [
 type VacancyCardProps = {
   vacancy: Vacancy
   urgent?: boolean
-  onSelect: (vacancy: Vacancy, trigger: HTMLButtonElement) => void
+  onSelect: (vacancy: Vacancy) => void
 }
 
 function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
@@ -79,7 +83,7 @@ function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
         <button
           className="vacancy-card__details"
           type="button"
-          onClick={(event) => onSelect(vacancy, event.currentTarget)}
+          onClick={() => onSelect(vacancy)}
         >
           View vacancy details
         </button>
@@ -90,38 +94,11 @@ function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
 
 function JobsAndInsights() {
   const recruiterVacancies = useRecruiterVacancies()
-  const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null)
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const navigate = useNavigate()
 
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (selectedVacancy && dialog && !dialog.open) dialog.showModal()
-  }, [selectedVacancy])
-
-  const closeDetails = () => {
-    setSelectedVacancy(null)
-    window.requestAnimationFrame(() => triggerRef.current?.focus())
+  const selectVacancy = (vacancy: Vacancy) => {
+    navigate(`/careers#job-${vacancy.id}`)
   }
-
-  const selectVacancy = (vacancy: Vacancy, trigger: HTMLButtonElement) => {
-    triggerRef.current = trigger
-    setSelectedVacancy(vacancy)
-  }
-  const applicationUrl = (() => {
-    if (!selectedVacancy?.applicationUrl) return null
-
-    try {
-      const destination = new URL(selectedVacancy.applicationUrl)
-      return destination.protocol === 'https:' ? destination.href : null
-    } catch (error) {
-      console.error(
-        `Invalid application URL for vacancy "${selectedVacancy.id}".`,
-        error,
-      )
-      return null
-    }
-  })()
 
   return (
     <>
@@ -227,84 +204,6 @@ function JobsAndInsights() {
           </div>
         </div>
       </section>
-
-      <dialog
-        className="vacancy-dialog"
-        ref={dialogRef}
-        aria-labelledby="vacancy-dialog-title"
-        onClose={closeDetails}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            dialogRef.current?.close()
-          }
-        }}
-        onClick={(event) => {
-          if (event.target === dialogRef.current) dialogRef.current?.close()
-        }}
-      >
-        {selectedVacancy && (
-          <div className="vacancy-dialog__content">
-            <button
-              className="vacancy-dialog__close"
-              type="button"
-              aria-label="Close vacancy details"
-              onClick={() => dialogRef.current?.close()}
-            >
-              Close
-            </button>
-            <p className="content-eyebrow">
-              {selectedVacancy.source === 'recruiter'
-                ? 'Recruiter-posted preview'
-                : 'Illustrative vacancy details'}{' '}
-              · {selectedVacancy.posted}
-            </p>
-            <h2 id="vacancy-dialog-title">{selectedVacancy.title}</h2>
-            <div className="vacancy-dialog__meta">
-              <span>{selectedVacancy.location}</span>
-              <span>{selectedVacancy.employmentType}</span>
-              {selectedVacancy.salary && <span>{selectedVacancy.salary}</span>}
-            </div>
-            <p>{selectedVacancy.summary}</p>
-            <h3>Role overview</h3>
-            <p>
-              This sample content demonstrates where approved role information
-              will appear. Final details, requirements and application
-              instructions will be provided with each published vacancy.
-            </p>
-            <h3>Key responsibilities</h3>
-            <ul>
-              {selectedVacancy.responsibilities.map((responsibility) => (
-                <li key={responsibility}>{responsibility}</li>
-              ))}
-            </ul>
-            <p className="vacancy-dialog__notice">
-              {selectedVacancy.source === 'recruiter'
-                ? 'Prototype post: this vacancy is saved only in this browser. Applications are not submitted or stored.'
-                : 'This is a sample listing, not an active vacancy.'}
-            </p>
-            {applicationUrl ? (
-              <a
-                className="vacancy-dialog__apply"
-                href={applicationUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Apply via IMFORCE
-              </a>
-            ) : (
-              <button
-                className="vacancy-dialog__apply"
-                type="button"
-                disabled
-                title="The application link is not available yet."
-              >
-                Apply via IMFORCE
-              </button>
-            )}
-          </div>
-        )}
-      </dialog>
     </>
   )
 }

@@ -1,5 +1,7 @@
 import type { IndustryName } from './industries'
 
+export const nexoraAiApplicationUrl = 'https://nexoraai.com'
+
 export type Vacancy = {
   id: string
   title: string
