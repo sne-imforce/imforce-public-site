@@ -1,6 +1,7 @@
 import './App.css'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Footer from './components/public/Footer'
+import { StaffAccessPage } from './components/public/StaffAccessModal'
 import Seo from './components/seo/Seo'
 import About from './pages/public site/About'
 import Careers from './pages/public site/Careers'
@@ -152,6 +153,7 @@ function AppContent() {
         <Route path="/" element={<Home />} />
         <Route path="/about" element={<About />} />
         <Route path="/careers" element={<Careers />} />
+        <Route path="/admin" element={<StaffAccessPage />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/employers" element={<Employers />} />
         <Route path="/services/placements" element={<Placement />} />

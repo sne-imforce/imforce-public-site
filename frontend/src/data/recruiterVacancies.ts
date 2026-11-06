@@ -107,3 +107,57 @@ export function addRecruiterVacancy(
   notifyListeners()
   return newVacancy
 }
+
+export function updateRecruiterVacancy(
+  vacancyId: string,
+  updates: Partial<Omit<RecruiterVacancy, 'id' | 'source'>>,
+) {
+  const existingIndex = recruiterVacancies.findIndex(
+    (vacancy) => vacancy.id === vacancyId,
+  )
+
+  if (existingIndex === -1) {
+    throw new Error('This vacancy could not be found to update.')
+  }
+
+  const updatedVacancies = recruiterVacancies.map((vacancy) =>
+    vacancy.id === vacancyId
+      ? {
+          ...vacancy,
+          ...updates,
+        }
+      : vacancy,
+  )
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
+  } catch (error) {
+    console.error('Unable to update recruiter-created vacancy.', error)
+    throw new Error('This vacancy could not be updated in this browser.', {
+      cause: error,
+    })
+  }
+
+  recruiterVacancies = updatedVacancies
+  notifyListeners()
+
+  return recruiterVacancies[existingIndex]
+}
+
+export function deleteRecruiterVacancy(vacancyId: string) {
+  const updatedVacancies = recruiterVacancies.filter(
+    (vacancy) => vacancy.id !== vacancyId,
+  )
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
+  } catch (error) {
+    console.error('Unable to delete recruiter-created vacancy.', error)
+    throw new Error('This vacancy could not be deleted in this browser.', {
+      cause: error,
+    })
+  }
+
+  recruiterVacancies = updatedVacancies
+  notifyListeners()
+}
