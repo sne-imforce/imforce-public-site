@@ -245,8 +245,8 @@ function Navbar() {
       ref={navbarRef}
     >
       <div className="navbar__bar">
-        <a className="navbar__brand" href="/" aria-label="IMFORCE Consolidated home">
-          <img src={imforceLogo} alt="IMFORCE Consolidated" />
+        <a className="navbar__brand" href="/" aria-label="IMFORCE Talent Recruitment home">
+          <img src={imforceLogo} alt="IMFORCE Talent Recruitment" />
         </a>
 
         <nav className="navbar__desktop-nav" aria-label="Main">

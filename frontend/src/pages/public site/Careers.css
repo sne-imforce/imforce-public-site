@@ -215,13 +215,10 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: #fff;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .careers-card:hover {
-  transform: translateY(-2px);
-  border-color: #9bb9d8;
-  box-shadow: 0 12px 28px rgb(1 46 111 / 9%);
+  background: #eaf1f9;
 }
 
 .careers-card__badges {

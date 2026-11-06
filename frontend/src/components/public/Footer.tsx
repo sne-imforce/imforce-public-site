@@ -1,6 +1,7 @@
 import { FaFacebookF, FaInstagram, FaLinkedinIn, FaTiktok } from 'react-icons/fa'
 import { Link } from 'react-router-dom'
 import footerLogo from '../../assets/Circular_logo-removebg-preview.png'
+import StaffAccessModal from './StaffAccessModal'
 import './Footer.css'
 
 const socialPlatforms = [
@@ -15,7 +16,7 @@ function Footer() {
     <footer className="global-footer">
       <div className="global-footer__inner">
         <div className="global-footer__brand">
-          <Link className="global-footer__logo" to="/" aria-label="IMFORCE Consolidated home">
+          <Link className="global-footer__logo" to="/" aria-label="IMFORCE Talent Recruitment home">
             <img src={footerLogo} alt="" />
             <span>IMFORCE <strong>CONSOLIDATED</strong></span>
           </Link>
@@ -23,6 +24,7 @@ function Footer() {
             Connecting employers and candidates through permanent staffing and
             placement.
           </p>
+          <StaffAccessModal />
         </div>
 
         <nav className="global-footer__nav" aria-label="Footer navigation">
@@ -69,7 +71,7 @@ function Footer() {
       </div>
 
       <div className="global-footer__bottom">
-        <p>© {new Date().getFullYear()} IMFORCE Consolidated. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} IMFORCE Talent Recruitment. All rights reserved.</p>
       </div>
     </footer>
   )

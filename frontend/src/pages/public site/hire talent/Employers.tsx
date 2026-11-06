@@ -275,10 +275,10 @@ function Employers() {
     )
     const previousDescription = description?.content
 
-    document.title = 'For Employers | Permanent Staffing | IMFORCE Consolidated'
+    document.title = 'For Employers | Permanent Staffing | IMFORCE Talent Recruitment'
     if (description) {
       description.content =
-        'Hire permanent staff with IMFORCE Consolidated. Share your job requirements, complete the job order process and track recruitment progress.'
+        'Hire permanent staff with IMFORCE Talent Recruitment. Share your job requirements, complete the job order process and track recruitment progress.'
     }
 
     return () => {
@@ -573,6 +573,26 @@ function Employers() {
                     placeholder="For example, Monday to Friday, 8 am to 5 pm"
                     required
                   />
+                </label>
+                <label className="employers-form__field">
+                  Salary option *
+                  <select
+                    name="salaryType"
+                    defaultValue="specified"
+                    required
+                    onChange={(event) => {
+                      const salaryField =
+                        event.currentTarget.form?.elements.namedItem('salary')
+                      if (!(salaryField instanceof HTMLInputElement)) return
+                      salaryField.value =
+                        event.currentTarget.value === 'market'
+                          ? 'Market Related Salary'
+                          : ''
+                    }}
+                  >
+                    <option value="specified">Enter salary / range</option>
+                    <option value="market">Market Related Salary</option>
+                  </select>
                 </label>
                 <label className="employers-form__field">
                   Salary or salary range *

@@ -14,10 +14,10 @@ function Certifications() {
     const previousDescription = description?.content
 
     document.title =
-      'Certifications and Credentials | IMFORCE Consolidated'
+      'Certifications and Credentials | IMFORCE Talent Recruitment'
     if (description) {
       description.content =
-        'View certification and credential information for IMFORCE Consolidated. Details and evidence will be published after verification and approval.'
+        'View certification and credential information for IMFORCE Talent Recruitment. Details and evidence will be published after verification and approval.'
     }
 
     return () => {
@@ -49,7 +49,7 @@ function Certifications() {
               Certifications and credentials.
             </h1>
             <p>
-              Find verified information about IMFORCE Consolidated’s
+              Find verified information about IMFORCE Talent Recruitment’s
               certifications and company credentials. We publish claims only
               when the supporting information has been confirmed.
             </p>

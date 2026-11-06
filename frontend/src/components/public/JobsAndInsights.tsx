@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useRecruiterVacancies } from '../../data/recruiterVacancies'
 import { recentVacancies, urgentVacancies, type Vacancy } from '../../data/vacancies'
 import './JobsAndInsights.css'
 
@@ -58,30 +59,37 @@ type VacancyCardProps = {
 
 function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
   return (
-    <button
-      className="vacancy-card"
-      type="button"
-      onClick={(event) => onSelect(vacancy, event.currentTarget)}
-      aria-label={`View details for ${vacancy.title}`}
-    >
+    <article className="vacancy-card">
       <span className="vacancy-card__badges">
         <span className={`vacancy-badge${urgent ? ' vacancy-badge--urgent' : ''}`}>
           {urgent ? 'Urgent' : 'Recently added'}
         </span>
-        <span className="vacancy-badge vacancy-badge--sample">Sample listing</span>
+        <span className="vacancy-badge vacancy-badge--sample">
+          {vacancy.source === 'recruiter' ? 'Recruiter post · preview' : 'Sample listing'}
+        </span>
       </span>
       <span className="vacancy-card__title">{vacancy.title}</span>
       <span className="vacancy-card__meta">
         <span>{vacancy.location}</span>
         <span>{vacancy.employmentType}</span>
+        {vacancy.salary && <span>{vacancy.salary}</span>}
       </span>
       <span className="vacancy-card__summary">{vacancy.summary}</span>
-      <span className="vacancy-card__action">View vacancy details</span>
-    </button>
+      <div className="vacancy-card__actions">
+        <button
+          className="vacancy-card__details"
+          type="button"
+          onClick={(event) => onSelect(vacancy, event.currentTarget)}
+        >
+          View vacancy details
+        </button>
+      </div>
+    </article>
   )
 }
 
 function JobsAndInsights() {
+  const recruiterVacancies = useRecruiterVacancies()
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -100,6 +108,20 @@ function JobsAndInsights() {
     triggerRef.current = trigger
     setSelectedVacancy(vacancy)
   }
+  const applicationUrl = (() => {
+    if (!selectedVacancy?.applicationUrl) return null
+
+    try {
+      const destination = new URL(selectedVacancy.applicationUrl)
+      return destination.protocol === 'https:' ? destination.href : null
+    } catch (error) {
+      console.error(
+        `Invalid application URL for vacancy "${selectedVacancy.id}".`,
+        error,
+      )
+      return null
+    }
+  })()
 
   return (
     <>
@@ -120,9 +142,8 @@ function JobsAndInsights() {
           </div>
 
           <aside className="vacancies-preview-note">
-            These sample cards are for layout preview only. Approved vacancy
-            information and matching application links will appear when
-            available.
+            Sample cards are illustrative. Recruiter-created preview vacancies
+            are stored in this browser only.
           </aside>
 
           <section className="vacancy-group" aria-labelledby="urgent-vacancies-title">
@@ -152,7 +173,7 @@ function JobsAndInsights() {
               </div>
             </div>
             <div className="vacancy-grid">
-              {recentVacancies.map((vacancy) => (
+              {[...recruiterVacancies, ...recentVacancies].map((vacancy) => (
                 <VacancyCard
                   key={vacancy.id}
                   vacancy={vacancy}
@@ -233,12 +254,16 @@ function JobsAndInsights() {
               Close
             </button>
             <p className="content-eyebrow">
-              Illustrative vacancy details · {selectedVacancy.posted}
+              {selectedVacancy.source === 'recruiter'
+                ? 'Recruiter-posted preview'
+                : 'Illustrative vacancy details'}{' '}
+              · {selectedVacancy.posted}
             </p>
             <h2 id="vacancy-dialog-title">{selectedVacancy.title}</h2>
             <div className="vacancy-dialog__meta">
               <span>{selectedVacancy.location}</span>
               <span>{selectedVacancy.employmentType}</span>
+              {selectedVacancy.salary && <span>{selectedVacancy.salary}</span>}
             </div>
             <p>{selectedVacancy.summary}</p>
             <h3>Role overview</h3>
@@ -247,15 +272,36 @@ function JobsAndInsights() {
               will appear. Final details, requirements and application
               instructions will be provided with each published vacancy.
             </p>
-            <h3>Example responsibilities</h3>
+            <h3>Key responsibilities</h3>
             <ul>
               {selectedVacancy.responsibilities.map((responsibility) => (
                 <li key={responsibility}>{responsibility}</li>
               ))}
             </ul>
             <p className="vacancy-dialog__notice">
-              This is a sample listing, not an active vacancy.
+              {selectedVacancy.source === 'recruiter'
+                ? 'Prototype post: this vacancy is saved only in this browser. Applications are not submitted or stored.'
+                : 'This is a sample listing, not an active vacancy.'}
             </p>
+            {applicationUrl ? (
+              <a
+                className="vacancy-dialog__apply"
+                href={applicationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Apply on Nexora AI
+              </a>
+            ) : (
+              <button
+                className="vacancy-dialog__apply"
+                type="button"
+                disabled
+                title="The application link is not available yet."
+              >
+                Apply on Nexora AI
+              </button>
+            )}
           </div>
         )}
       </dialog>

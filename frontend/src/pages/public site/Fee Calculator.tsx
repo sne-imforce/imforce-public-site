@@ -112,7 +112,7 @@ function FeeCalculator() {
     )
     const previousDescription = description?.content
 
-    document.title = 'Fee Calculator | IMFORCE Consolidated'
+    document.title = 'Fee Calculator | IMFORCE Talent Recruitment'
     if (description) {
       description.content =
         'Estimate IMFORCE permanent placement fees using monthly salary and number of hires.'

@@ -1,0 +1,212 @@
+.staff-access-trigger {
+  border: 0;
+  cursor: pointer;
+}
+
+.staff-access-dialog {
+  width: min(660px, calc(100% - 32px));
+  max-height: min(90vh, 860px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 20px;
+  background: rgb(246 250 255 / 84%);
+  color: var(--color-ink);
+  box-shadow: 0 28px 90px rgb(0 13 36 / 40%);
+  backdrop-filter: blur(24px);
+}
+
+.staff-access-dialog::backdrop {
+  background: rgb(0 17 42 / 62%);
+  backdrop-filter: blur(8px);
+}
+
+.staff-access-panel {
+  position: relative;
+  padding: clamp(24px, 5vw, 42px);
+}
+
+.staff-access-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(1 46 111 / 16%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 70%);
+  color: var(--color-primary);
+  font: 400 28px/1 var(--font-interface);
+  cursor: pointer;
+}
+
+.staff-access-form {
+  display: grid;
+  gap: 16px;
+}
+
+.staff-access-form h2 {
+  margin: 0;
+  color: var(--color-primary);
+  font: 700 clamp(1.6rem, 4vw, 2rem)/1.2 var(--font-heading);
+}
+
+.staff-access-eyebrow {
+  margin: 0 0 7px;
+  color: var(--color-accent);
+  font: 700 11px/1.4 var(--font-interface);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.staff-access-description {
+  margin: 0;
+  color: var(--color-muted);
+  font: 400 14px/1.65 var(--font-body);
+}
+
+.staff-access-form > label,
+.staff-access-fields > label {
+  display: grid;
+  gap: 7px;
+  color: #263c53;
+  font: 600 12px/1.4 var(--font-interface);
+}
+
+.staff-access-form input:not([type='checkbox']),
+.staff-access-form select,
+.staff-access-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgb(1 46 111 / 18%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 82%);
+  color: var(--color-ink);
+  font: 400 14px/1.5 var(--font-body);
+}
+
+.staff-access-form textarea {
+  resize: vertical;
+}
+
+.staff-access-form input:focus-visible,
+.staff-access-form select:focus-visible,
+.staff-access-form textarea:focus-visible,
+.staff-access-close:focus-visible,
+.staff-access-signout:focus-visible {
+  outline: 3px solid rgb(47 127 201 / 38%);
+  outline-offset: 2px;
+}
+
+.staff-access-submit {
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font: 600 14px/1.3 var(--font-interface);
+  cursor: pointer;
+}
+
+.staff-access-submit:hover {
+  background: #073c7e;
+}
+
+.staff-access-demo {
+  margin: 0;
+  color: #5b6b7b;
+  font: 400 11px/1.6 var(--font-interface);
+}
+
+.staff-access-error {
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: 8px;
+  font: 500 13px/1.5 var(--font-interface);
+}
+
+.staff-access-error {
+  background: #fff0ed;
+  color: #8b3022;
+}
+
+.staff-access-form-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-right: 38px;
+}
+
+.staff-access-signout {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgb(1 46 111 / 18%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 70%);
+  color: var(--color-primary);
+  font: 600 12px var(--font-interface);
+  cursor: pointer;
+}
+
+.staff-access-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.staff-access-fields__wide {
+  grid-column: 1 / -1;
+}
+
+.staff-access-paid-check {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px !important;
+}
+
+.staff-access-paid-check input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--color-primary);
+}
+
+.staff-access-snackbar {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 100;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 15px 20px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 10px;
+  background: #17613c;
+  color: #fff;
+  box-shadow: 0 12px 32px rgb(0 13 36 / 24%);
+  font: 600 14px/1.5 var(--font-interface);
+}
+
+@media (max-width: 540px) {
+  .staff-access-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-access-fields__wide {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-access-dialog,
+  .staff-access-dialog * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -35,7 +35,7 @@ function Placement() {
     const previousDescription = description?.content
 
     document.title =
-      'Permanent Staffing and Placement Services | IMFORCE Consolidated'
+      'Permanent Staffing and Placement Services | IMFORCE Talent Recruitment'
     if (description) {
       description.content =
         'Learn about IMFORCE permanent staffing and placement services for South African employers and candidates, including the recruitment process and estimated fees.'

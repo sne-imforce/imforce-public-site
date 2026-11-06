@@ -8,10 +8,13 @@ export type Vacancy = {
   industry?: IndustryName
   category: string
   employmentType: string
+  salary?: string
   posted: string
   applicationUrl: string | null
   summary: string
   responsibilities: string[]
+  source?: 'recruiter'
+  clientName?: string
 }
 
 export const urgentVacancies: Vacancy[] = [

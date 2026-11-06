@@ -14,7 +14,7 @@ function Contact() {
     document.title = 'Contact IMFORCE | Pietermaritzburg Recruitment Agency'
     if (description) {
       description.content =
-        'Contact IMFORCE Consolidated, a Pietermaritzburg-based recruitment agency. Send an enquiry about permanent staffing, job opportunities or employer services.'
+        'Contact IMFORCE Talent Recruitment, a Pietermaritzburg-based recruitment agency. Send an enquiry about permanent staffing, job opportunities or employer services.'
     }
 
     return () => {

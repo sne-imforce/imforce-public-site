@@ -3,13 +3,13 @@ import { FiSearch } from 'react-icons/fi'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../../components/public/Navbar'
 import { getIndustryBySlug, industries } from '../../data/industries'
+import {
+  getRecruiterVacancies,
+  useRecruiterVacancies,
+} from '../../data/recruiterVacancies'
 import { recentVacancies, urgentVacancies, type Vacancy } from '../../data/vacancies'
 import './Careers.css'
 
-const vacancies = [...urgentVacancies, ...recentVacancies]
-const categories = [...new Set(vacancies.map((vacancy) => vacancy.category))].sort()
-const locations = [...new Set(vacancies.map((vacancy) => vacancy.location))].sort()
-const employmentTypes = [...new Set(vacancies.map((vacancy) => vacancy.employmentType))].sort()
 const filterStorageKey = 'imforce-careers-filters'
 
 type Filters = {
@@ -35,7 +35,12 @@ function getSecureApplicationUrl(value: string) {
   }
 }
 
-function loadSavedFilters(): Filters {
+function loadSavedFilters(vacancies: Vacancy[]): Filters {
+  const categories = [...new Set(vacancies.map((vacancy) => vacancy.category))]
+  const locations = [...new Set(vacancies.map((vacancy) => vacancy.location))]
+  const employmentTypes = [
+    ...new Set(vacancies.map((vacancy) => vacancy.employmentType)),
+  ]
   const industryFromUrl = getIndustryBySlug(
     new URLSearchParams(window.location.search).get('industry'),
   )
@@ -86,8 +91,27 @@ function loadSavedFilters(): Filters {
 function Careers() {
   const location = useLocation()
   const navigate = useNavigate()
+  const recruiterVacancies = useRecruiterVacancies()
+  const vacancies = useMemo(
+    () => [...urgentVacancies, ...recentVacancies, ...recruiterVacancies],
+    [recruiterVacancies],
+  )
+  const categories = useMemo(
+    () => [...new Set(vacancies.map((vacancy) => vacancy.category))].sort(),
+    [vacancies],
+  )
+  const locations = useMemo(
+    () => [...new Set(vacancies.map((vacancy) => vacancy.location))].sort(),
+    [vacancies],
+  )
+  const employmentTypes = useMemo(
+    () => [...new Set(vacancies.map((vacancy) => vacancy.employmentType))].sort(),
+    [vacancies],
+  )
   const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState<Filters>(loadSavedFilters)
+  const [filters, setFilters] = useState<Filters>(() =>
+    loadSavedFilters([...urgentVacancies, ...recentVacancies, ...getRecruiterVacancies()]),
+  )
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null)
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -117,10 +141,10 @@ function Careers() {
     )
     const previousDescription = description?.content
 
-    document.title = 'Careers & Job Search | IMFORCE Consolidated'
+    document.title = 'Careers & Job Search | IMFORCE Talent Recruitment'
     if (description) {
       description.content =
-        "We're hiring in Pietermaritzburg, Durban, Eastern Cape, Gauteng, and other regions of South Africa. Explore careers with IMFORCE Consolidated."
+        "We're hiring in Pietermaritzburg, Durban, Eastern Cape, Gauteng, and other regions of South Africa. Explore careers with IMFORCE Talent Recruitment."
     }
 
     return () => {
@@ -195,7 +219,7 @@ function Careers() {
           vacancy.employmentType === filters.employmentType)
       )
     })
-  }, [filters, search])
+  }, [filters, search, vacancies])
 
   const openVacancy = (vacancy: Vacancy, trigger: HTMLButtonElement) => {
     triggerRef.current = trigger
@@ -233,7 +257,7 @@ function Careers() {
             </h1>
             <p>
               Explore roles and discover where your experience could take you.
-              Search and filter the sample listings below.
+              Search and filter current listings and preview roles below.
             </p>
             <a className="careers-hero__button" href="#vacancies">
               Browse opportunities
@@ -253,20 +277,20 @@ function Careers() {
               </p>
               <h2 id="vacancies-title">Explore opportunities</h2>
               <p>
-                These example vacancies demonstrate the job search experience.
-                They are not active openings.
+                Browse published recruiter posts and illustrative sample
+                vacancies.
               </p>
             </div>
             <span className="careers-sample-count">
-              {filteredVacancies.length} sample{' '}
+              {filteredVacancies.length}{' '}
               {filteredVacancies.length === 1 ? 'role' : 'roles'}
             </span>
           </div>
 
           <aside className="careers-notice">
-            <strong>Sample listings only.</strong> Vacancy details are
-            illustrative, and applications are not currently submitted or
-            stored. Contact{' '}
+            <strong>Prototype listings.</strong> Sample roles are illustrative.
+            Recruiter-created posts are stored in this browser only; applications
+            are not submitted or stored. Contact{' '}
             <a href="mailto:info@imforce.co.za">info@imforce.co.za</a> to ask
             about current openings, or email{' '}
             <a href="mailto:admin@imforce.co.za">admin@imforce.co.za</a>.
@@ -372,8 +396,18 @@ function Careers() {
                 return (
                   <article className="careers-card" key={vacancy.id}>
                     <div className="careers-card__badges">
-                      <span>{isUrgent ? 'Urgent example' : 'Recent example'}</span>
-                      <span>Sample role</span>
+                      <span>
+                        {vacancy.source === 'recruiter'
+                          ? 'Recruiter post · preview'
+                          : isUrgent
+                            ? 'Urgent example'
+                            : 'Recent example'}
+                      </span>
+                      <span>
+                        {vacancy.source === 'recruiter'
+                          ? 'Internal client vacancy'
+                          : 'Sample role'}
+                      </span>
                     </div>
                     <h3>{vacancy.title}</h3>
                     <p className="careers-card__category">{vacancy.category}</p>
@@ -382,6 +416,7 @@ function Careers() {
                       <span>{vacancy.location}</span>
                       <span>{vacancy.region}</span>
                       <span>{vacancy.employmentType}</span>
+                      {vacancy.salary && <span>{vacancy.salary}</span>}
                     </div>
                     <button
                       type="button"
@@ -395,7 +430,7 @@ function Careers() {
             </div>
           ) : (
             <div className="careers-empty">
-              <h3>No matching sample roles</h3>
+              <h3>No matching roles</h3>
               <p>Try a different search or clear your filters.</p>
               <button type="button" onClick={resetFilters}>
                 Clear filters
@@ -461,23 +496,31 @@ function Careers() {
             ) : (
               <>
                 <p className="careers-eyebrow careers-eyebrow--blue">
-                  Sample vacancy | {selectedVacancy.category}
+                  {selectedVacancy.source === 'recruiter'
+                    ? 'Client vacancy preview'
+                    : 'Sample vacancy'}{' '}
+                  | {selectedVacancy.category}
                 </p>
                 <h2 id="careers-dialog-title">{selectedVacancy.title}</h2>
                 <div className="careers-dialog__meta">
                   <span>{selectedVacancy.location}</span>
                   <span>{selectedVacancy.region}</span>
                   <span>{selectedVacancy.employmentType}</span>
+                  {selectedVacancy.salary && (
+                    <span>{selectedVacancy.salary}</span>
+                  )}
                 </div>
                 <p>{selectedVacancy.summary}</p>
-                <h3>Example responsibilities</h3>
+                <h3>Key responsibilities</h3>
                 <ul>
                   {selectedVacancy.responsibilities.map((responsibility) => (
                     <li key={responsibility}>{responsibility}</li>
                   ))}
                 </ul>
                 <p className="careers-dialog__notice">
-                  This is an illustrative sample, not an active vacancy.
+                  {selectedVacancy.source === 'recruiter'
+                    ? 'Prototype post: this vacancy is saved only in this browser. Applications are not submitted or stored.'
+                    : 'This is an illustrative sample, not an active vacancy.'}
                 </p>
                 <button
                   className="careers-dialog__apply"

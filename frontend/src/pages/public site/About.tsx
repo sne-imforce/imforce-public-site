@@ -38,7 +38,7 @@ function About() {
     document.title = 'About IMFORCE | Recruitment Across South African Industries'
     if (description) {
       description.content =
-        'Learn how IMFORCE Consolidated helps candidates explore permanent recruitment opportunities across manufacturing, FMCG, hospitality, retail, engineering, finance, security, logistics and IT.'
+        'Learn how IMFORCE Talent Recruitment helps candidates explore permanent recruitment opportunities across manufacturing, FMCG, hospitality, retail, engineering, finance, security, logistics and IT.'
     }
 
     return () => {
@@ -73,7 +73,7 @@ function About() {
               Better work begins with understanding people.
             </h1>
             <p className="about-hero__description">
-              IMFORCE Consolidated is a South African recruitment company
+              IMFORCE Talent Recruitment is a South African recruitment company
               focused on permanent staffing and placement—bringing employers
               and candidates together around the right opportunity.
             </p>
