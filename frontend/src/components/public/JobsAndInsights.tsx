@@ -6,21 +6,21 @@ import './JobsAndInsights.css'
 const insightCards = [
   {
     category: 'For employers',
-    title: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+    title: 'Permanent staffing built around role fit',
     description:
-      'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam.',
+      'From shortlist to placement, IMFORCE helps employers connect with candidates who match job requirements, values and operational needs.',
   },
   {
     category: 'For job seekers',
-    title: 'Sed nisi. Nulla quis sem at nibh elementum imperdiet.',
+    title: 'Clear opportunities across South African industries',
     description:
-      'Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa.',
+      'Job seekers can explore roles in manufacturing, logistics, hospitality, retail, finance, operations and more through a practical recruitment process.',
   },
   {
     category: 'Workplace insights',
-    title: 'Donec sodales sagittis magna. Sed consequat.',
+    title: 'Thoughtful recruitment that keeps momentum',
     description:
-      'Vestibulum lacinia arcu eget nulla. Class aptent taciti sociosqu ad litora torquent per conubia nostra.',
+      'A transparent process helps hiring teams and candidates move decisively, with the right information at each step of the journey.',
   },
 ]
 
@@ -290,7 +290,7 @@ function JobsAndInsights() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Apply on Nexora AI
+                Apply via IMFORCE
               </a>
             ) : (
               <button
@@ -299,7 +299,7 @@ function JobsAndInsights() {
                 disabled
                 title="The application link is not available yet."
               >
-                Apply on Nexora AI
+                Apply via IMFORCE
               </button>
             )}
           </div>

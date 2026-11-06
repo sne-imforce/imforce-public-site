@@ -61,7 +61,6 @@ type NavbarDropdownProps = {
   isToggleActive: boolean
   onToggle: () => void
   onOpen: () => void
-  onClose: () => void
   onNavigate: () => void
 }
 
@@ -83,14 +82,11 @@ function NavbarDropdown({
   isToggleActive,
   onToggle,
   onOpen,
-  onClose,
   onNavigate,
 }: NavbarDropdownProps) {
   return (
     <div
       className={`navbar__dropdown${isMobile ? ' navbar__dropdown--mobile' : ''}${label === 'About' ? ' navbar__dropdown--industries' : ''}${isOpen ? ' is-open' : ''}`}
-      onMouseEnter={isMobile ? undefined : onOpen}
-      onMouseLeave={isMobile ? undefined : onClose}
     >
       <button
         className={`navbar__link navbar__dropdown-toggle${isToggleActive ? ' is-active' : ''}`}
@@ -98,6 +94,7 @@ function NavbarDropdown({
         aria-expanded={isOpen}
         aria-controls={id}
         onClick={onToggle}
+        onFocus={isMobile ? undefined : onOpen}
       >
         {label}
         <FiChevronDown className="navbar__chevron" aria-hidden="true" />
@@ -149,6 +146,7 @@ function Navbar() {
     const handlePointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && !navbarRef.current?.contains(event.target)) {
         setOpenDropdown(null)
+        setIsMobileMenuOpen(false)
       }
     }
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -206,11 +204,6 @@ function Navbar() {
           )
         }
         onOpen={() => setOpenDropdown(id)}
-        onClose={() => {
-          if (!isMobile && dropdown.label !== 'About') {
-            setOpenDropdown(null)
-          }
-        }}
         onNavigate={closeNavigation}
       />
     )
@@ -240,11 +233,18 @@ function Navbar() {
   )
 
   return (
-    <header
-      className={`navbar${isScrolled ? ' navbar--scrolled' : ''}${isMobileMenuOpen ? ' navbar--menu-open' : ''}`}
-      ref={navbarRef}
-    >
-      <div className="navbar__bar">
+    <>
+      <button
+        type="button"
+        className={`navbar__mobile-backdrop${isMobileMenuOpen ? ' is-open' : ''}`}
+        aria-label="Close navigation menu"
+        onClick={() => setIsMobileMenuOpen(false)}
+      />
+      <header
+        className={`navbar${isScrolled ? ' navbar--scrolled' : ''}${isMobileMenuOpen ? ' navbar--menu-open' : ''}`}
+        ref={navbarRef}
+      >
+        <div className="navbar__bar">
         <a className="navbar__brand" href="/" aria-label="IMFORCE Talent Recruitment home">
           <img src={imforceLogo} alt="IMFORCE Talent Recruitment" />
         </a>
@@ -279,8 +279,9 @@ function Navbar() {
         <nav className="navbar__mobile-nav" aria-label="Main">
           {renderLinks(true)}
         </nav>
-      </div>
-    </header>
+        </div>
+      </header>
+    </>
   )
 }
 

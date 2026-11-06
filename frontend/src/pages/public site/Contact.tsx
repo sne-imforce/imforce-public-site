@@ -53,6 +53,16 @@ function Contact() {
             </p>
 
             <div className="contact-details__emails">
+              <h3>Visit</h3>
+              <p>12 Halstead Road<br />Mkondeni<br />Pietermaritzburg<br />3201</p>
+            </div>
+
+            <div className="contact-details__emails">
+              <h3>Call</h3>
+              <a href="tel:0334920600">033 492 0600</a>
+            </div>
+
+            <div className="contact-details__emails">
               <h3>Email</h3>
               <a href="mailto:info@imforce.co.za">info@imforce.co.za</a>
               <a href="mailto:admin@imforce.co.za">admin@imforce.co.za</a>

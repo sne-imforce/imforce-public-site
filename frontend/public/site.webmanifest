@@ -1,0 +1,17 @@
+{
+  "name": "IMFORCE Talent Recruitment",
+  "short_name": "IMFORCE",
+  "description": "Permanent staffing, workforce support, and recruitment solutions for employers and job seekers across South Africa.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1b2b",
+  "theme_color": "#0b1b2b",
+  "icons": [
+    {
+      "src": "/imforce-favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

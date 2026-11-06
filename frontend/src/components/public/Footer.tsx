@@ -5,10 +5,26 @@ import StaffAccessModal from './StaffAccessModal'
 import './Footer.css'
 
 const socialPlatforms = [
-  { name: 'Facebook', Icon: FaFacebookF },
-  { name: 'LinkedIn', Icon: FaLinkedinIn },
-  { name: 'TikTok', Icon: FaTiktok },
-  { name: 'Instagram', Icon: FaInstagram },
+  {
+    name: 'Facebook',
+    Icon: FaFacebookF,
+    url: 'https://www.facebook.com/profile.php?id=61590659210099',
+  },
+  {
+    name: 'LinkedIn',
+    Icon: FaLinkedinIn,
+    url: 'https://www.linkedin.com/company/imforce-talent-recruitment/',
+  },
+  {
+    name: 'TikTok',
+    Icon: FaTiktok,
+    url: 'https://www.tiktok.com/@imforcetalent?lang=en',
+  },
+  {
+    name: 'Instagram',
+    Icon: FaInstagram,
+    url: 'https://www.instagram.com/imforce_talent/?hl=en',
+  },
 ]
 
 function Footer() {
@@ -24,7 +40,9 @@ function Footer() {
             Connecting employers and candidates through permanent staffing and
             placement.
           </p>
-          <StaffAccessModal />
+          <div className="global-footer__brand-access">
+            <StaffAccessModal />
+          </div>
         </div>
 
         <nav className="global-footer__nav" aria-label="Footer navigation">
@@ -54,19 +72,27 @@ function Footer() {
 
         <div className="global-footer__social">
           <h2>Follow IMFORCE</h2>
-          <ul aria-label="Social media profiles (links coming soon)">
-            {socialPlatforms.map(({ name, Icon }) => (
-              <li key={name}>
-                <span
-                  className="global-footer__social-item"
-                  role="img"
-                  aria-label={name}
-                >
-                  <Icon aria-hidden="true" />
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="global-footer__social-row">
+            <ul aria-label="IMFORCE social media profiles">
+              {socialPlatforms.map(({ name, Icon, url }) => (
+                <li key={name}>
+                  <a
+                    className="global-footer__social-item"
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={name}
+                    title={name}
+                  >
+                    <Icon aria-hidden="true" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="global-footer__social-access">
+              <StaffAccessModal />
+            </div>
+          </div>
         </div>
       </div>
 
