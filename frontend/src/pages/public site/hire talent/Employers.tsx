@@ -172,14 +172,24 @@ function readStoredDraft(): { draft: StoredDraft | null; status: string } {
 
 function Employers() {
   const [searchParams] = useSearchParams()
+  const jobTitlePrefill = searchParams.get('jobTitle')?.trim() ?? ''
+  const monthlySalaryPrefill = searchParams.get('monthlySalary')?.trim() ?? ''
+  const numberOfHiresPrefill = searchParams.get('numberOfHires')?.trim() ?? ''
+  const hasPrefill = Boolean(
+    jobTitlePrefill || monthlySalaryPrefill || numberOfHiresPrefill,
+  )
   const [jobDescriptionName, setJobDescriptionName] = useState('')
   const [review, setReview] = useState<JobOrderReview | null>(null)
   const [checkoutUnavailable, setCheckoutUnavailable] = useState(false)
   const [initialDraft] = useState(readStoredDraft)
   const [hasSavedDraft, setHasSavedDraft] = useState(
-    initialDraft.draft !== null,
+    initialDraft.draft !== null || hasPrefill,
   )
-  const [draftStatus, setDraftStatus] = useState(initialDraft.status)
+  const [draftStatus, setDraftStatus] = useState(
+    hasPrefill
+      ? 'The position title, salary and number of hires were filled from the fee calculator. Selected files are not saved.'
+      : initialDraft.status,
+  )
   const dialogRef = useRef<HTMLDialogElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const today = new Date()
@@ -198,14 +208,15 @@ function Employers() {
       }
     }
 
-    const jobTitle = searchParams.get('jobTitle')?.trim() ?? ''
-    const monthlySalary = searchParams.get('monthlySalary')?.trim() ?? ''
-    const numberOfHires = searchParams.get('numberOfHires')?.trim() ?? ''
     const prefill: Array<[string, string]> = []
 
-    if (jobTitle) prefill.push(['jobTitle', jobTitle])
-    if (monthlySalary) prefill.push(['salary', formatSalaryPrefill(monthlySalary)])
-    if (numberOfHires) prefill.push(['numberOfHires', numberOfHires])
+    if (jobTitlePrefill) prefill.push(['jobTitle', jobTitlePrefill])
+    if (monthlySalaryPrefill) {
+      prefill.push(['salary', formatSalaryPrefill(monthlySalaryPrefill)])
+    }
+    if (numberOfHiresPrefill) {
+      prefill.push(['numberOfHires', numberOfHiresPrefill])
+    }
 
     if (prefill.length === 0) return
 
@@ -225,21 +236,25 @@ function Employers() {
         draftStorageKey,
         JSON.stringify(readFormDraft(form)),
       )
-      setHasSavedDraft(true)
-      setDraftStatus(
-        'The position title, salary and number of hires were filled from the fee calculator. Selected files are not saved.',
-      )
     } catch {
-      setDraftStatus(
-        'The position details were filled from the fee calculator, but this browser could not save the draft.',
-      )
+      queueMicrotask(() => {
+        setDraftStatus(
+          'The position details were filled from the fee calculator, but this browser could not save the draft.',
+        )
+      })
     }
 
     document.getElementById('job-order')?.scrollIntoView({
       behavior: 'smooth',
       block: 'start',
     })
-  }, [initialDraft, searchParams])
+  }, [
+    initialDraft,
+    jobTitlePrefill,
+    monthlySalaryPrefill,
+    numberOfHiresPrefill,
+    searchParams,
+  ])
 
   useEffect(() => {
     if (!review) return

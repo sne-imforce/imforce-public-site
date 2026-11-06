@@ -101,7 +101,7 @@ function StartJobOrderButton({ position }: { position: PositionInput }) {
 
 function FeeCalculator() {
   const [positions, setPositions] = useState<PositionInput[]>([
-    { id: 1, title: 'Position 1', monthlySalary: '', numberOfHires: '1' },
+    { id: 1, title: '', monthlySalary: '', numberOfHires: '1' },
   ])
   const nextPositionId = useState(2)
 
@@ -237,7 +237,7 @@ function FeeCalculator() {
       ...current,
       {
         id,
-        title: `Position ${current.length + 1}`,
+        title: '',
         monthlySalary: '',
         numberOfHires: '1',
       },
@@ -323,7 +323,7 @@ function FeeCalculator() {
                           className="fee-calculator-field__number"
                           id={`position-title-${position.id}`}
                           value={position.title}
-                          placeholder="e.g. Operations Manager"
+                          placeholder={`Position ${index + 1}`}
                           onChange={(event) =>
                             updatePosition(position.id, 'title', event.target.value)
                           }
