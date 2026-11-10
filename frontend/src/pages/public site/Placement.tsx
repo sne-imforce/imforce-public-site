@@ -17,7 +17,7 @@ const placementSteps = [
   {
     title: 'Activate the job order',
     description:
-      'The R499 activation fee is charged once per job description, regardless of the number of hires for that role.',
+      'The ZAR 499 activation fee is charged once per job description, regardless of the number of hires for that role.',
   },
   {
     title: 'Review candidates',
@@ -118,11 +118,9 @@ function Placement() {
               </p>
               <h3>Looking for the right person?</h3>
               <p>
-                Prepare a job order with the role, location, number of hires,
-                duties, requirements, qualifications, working hours, salary
-                range and closing date. The employer page currently provides a
-                preview only; secure submission and recruiter tracking are not
-                connected.
+                Send IMFORCE the role, location, hiring needs, requirements and
+                timing. The team will review your enquiry and contact you about
+                the next steps.
               </p>
               <Link
                 className="placement-button placement-button--primary"
@@ -137,10 +135,8 @@ function Placement() {
               </p>
               <h3>Looking for a permanent role?</h3>
               <p>
-                Browse approved vacancies and apply once to the matching
-                opportunity through its Nexora AI application link. The
-                listings currently shown on Careers are examples, not active
-                openings.
+                Browse current approved vacancies and contact IMFORCE about a
+                role that matches your experience.
               </p>
               <Link
                 className="placement-button placement-button--primary"
@@ -171,14 +167,14 @@ function Placement() {
                 hire, payable over 12 monthly instalments.
               </li>
               <li>
-                The R499 activation fee is per job description, not per hire,
+                The ZAR 499 activation fee is per job description, not per hire,
                 and is credited against the first placement invoice if a
                 placement proceeds.
               </li>
               <li>
                 If a job is put on hold or cancelled, the activation fee is
                 forfeited. Restarting within 90 days does not require another
-                fee; after 90 days a new R499 fee is required.
+                fee; after 90 days a new ZAR 499 fee is required.
               </li>
               <li>
                 VAT treatment is still to be confirmed by IMFORCE Finance.
@@ -188,7 +184,7 @@ function Placement() {
 
           <aside className="placement-fees__amount">
             <span>Job activation fee</span>
-            <strong>R499</strong>
+            <strong>ZAR 499</strong>
             <p>
               One fee per job description, regardless of the number of hires
               for that role.

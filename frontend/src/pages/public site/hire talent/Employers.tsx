@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import DatePicker from '../../../components/ui/DatePicker'
+import { submitEmployerInquiry } from '../../../data/api'
+import { formatDateDmy } from '../../../utils/dates'
 import Navbar from '../../../components/public/Navbar'
 import './Employers.css'
 
@@ -66,6 +69,7 @@ const draftStorageKey = 'imforce-employer-job-order-draft'
 const salaryPrefillFormatter = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
+  currencyDisplay: 'code',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
@@ -180,8 +184,12 @@ function Employers() {
   )
   const [jobDescriptionName, setJobDescriptionName] = useState('')
   const [review, setReview] = useState<JobOrderReview | null>(null)
-  const [checkoutUnavailable, setCheckoutUnavailable] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submissionStatus, setSubmissionStatus] = useState('')
   const [initialDraft] = useState(readStoredDraft)
+  const [closingDate, setClosingDate] = useState(
+    typeof initialDraft.draft?.closingDate === 'string' ? initialDraft.draft.closingDate : '',
+  )
   const [hasSavedDraft, setHasSavedDraft] = useState(
     initialDraft.draft !== null || hasPrefill,
   )
@@ -192,8 +200,20 @@ function Employers() {
   )
   const dialogRef = useRef<HTMLDialogElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
-  const today = new Date()
-  const minClosingDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const handleClosingDateChange = (value: string) => {
+    setClosingDate(value)
+    const form = formRef.current
+    if (!form) return
+    const draft = readFormDraft(form)
+    draft.closingDate = value
+    try {
+      sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
+      setHasSavedDraft(true)
+      setDraftStatus('Your answers are saved in this browser tab. Selected files are not saved.')
+    } catch {
+      setDraftStatus('This browser could not save your draft. Keep this page open or copy your answers before refreshing.')
+    }
+  }
 
   useEffect(() => {
     const form = formRef.current
@@ -363,7 +383,7 @@ function Employers() {
                 One activation fee for each job order.
               </h2>
               <p>
-                The R499 fee covers one job description, even if you are hiring
+                The ZAR 499 fee covers one job description, even if you are hiring
                 more than one person for that role. The fee is separate from
                 the placement fee. VAT treatment is still to be confirmed by
                 IMFORCE Finance.
@@ -371,11 +391,11 @@ function Employers() {
               <p>
                 If a job is paused or cancelled, the activation fee is not
                 refunded. Restarting within 90 days does not need another fee.
-                After 90 days, a new R499 fee is needed.
+                After 90 days, a new ZAR 499 fee is needed.
               </p>
             </div>
-            <div className="employers-fee__amount" aria-label="R499 per job order">
-              <strong>R499</strong>
+            <div className="employers-fee__amount" aria-label="ZAR 499 per job order">
+              <strong>ZAR 499</strong>
               <span>per job order, not per hire</span>
             </div>
           </div>
@@ -400,13 +420,10 @@ function Employers() {
           </div>
 
           <aside className="employers-form-notice">
-            <strong>This form is a preview only.</strong> Your answers are
-            stored only in this browser tab so they remain after a refresh.
-            They are not sent to IMFORCE. The selected job-description file is
-            not stored and must be added again after a refresh. Clear your
-            saved draft when finished. Paystack checkout and job tracking are
-            not connected yet. Use test details only; do not enter bank or card
-            information.
+            Your answers are saved in this browser tab while you complete the
+            form. They are sent to IMFORCE only when you confirm the job order.
+            The selected job-description file is not uploaded. Clear your
+            saved draft when finished.
           </aside>
           {hasSavedDraft && (
             <div className="employers-form__draft-controls">
@@ -424,9 +441,10 @@ function Employers() {
                     return
                   }
                   formRef.current?.reset()
+                  setClosingDate('')
                   setJobDescriptionName('')
                   setReview(null)
-                  setCheckoutUnavailable(false)
+                  setSubmissionStatus('')
                   setHasSavedDraft(false)
                 }}
               >
@@ -453,11 +471,13 @@ function Employers() {
                         ? value === 'on'
                           ? 'Confirmed'
                           : 'Not confirmed'
-                        : String(value ?? '').trim() || 'Not provided',
+                        : name === 'closingDate'
+                          ? formatDateDmy(String(value ?? '')) || 'Not provided'
+                          : String(value ?? '').trim() || 'Not provided',
                   }
                 })
 
-              setCheckoutUnavailable(false)
+              setSubmissionStatus('')
               setReview({
                 company: readFields(companyReviewFields),
                 job: readFields(jobReviewFields),
@@ -598,19 +618,19 @@ function Employers() {
                   Salary or salary range *
                   <input
                     name="salary"
-                    placeholder="For example, R20,000 to R25,000 per month"
+                    placeholder="For example, ZAR 20,000 to ZAR 25,000 per month"
                     required
                   />
                 </label>
-                <label className="employers-form__field">
-                  Closing date *
-                  <input
-                    name="closingDate"
-                    type="date"
-                    min={minClosingDate}
-                    required
-                  />
-                </label>
+                <DatePicker
+                  id="employer-closing-date"
+                  name="closingDate"
+                  className="employers-form__field"
+                  label="Closing date *"
+                  value={closingDate}
+                  onChange={handleClosingDateChange}
+                  required
+                />
                 <label className="employers-form__field employers-form__field--full">
                   Main duties *
                   <textarea name="duties" rows={4} required />
@@ -636,8 +656,8 @@ function Employers() {
                   />
                   <small>
                     {jobDescriptionName
-                      ? `${jobDescriptionName} selected. It will not be sent or saved.`
-                      : 'Optional in this preview. Files are not uploaded.'}
+                      ? `${jobDescriptionName} selected. It will not be uploaded.`
+                      : 'Optional. Files are not uploaded.'}
                   </small>
                 </label>
               </div>
@@ -645,20 +665,18 @@ function Employers() {
 
             <div className="employers-form__terms">
               <p>
-                <strong>Agreement and payment:</strong> The approved recruitment
-                agreement and its version must be provided before you can
-                accept it. Paystack checkout is not connected on this preview
-                page.
+                <strong>Job order enquiry:</strong> Submitting sends these
+                details to IMFORCE so the team can contact you about next steps.
               </p>
               <p>
-                The R499 activation fee is charged once per job order. Any
+                The ZAR 499 activation fee is charged once per job order. Any
                 placement fee is separate and will follow the signed agreement.
               </p>
               <label className="employers-form__checkbox">
                 <input type="checkbox" name="authorizedContact" required />
                 <span>
-                  I confirm I am allowed to share these job details for this
-                  preview. This is not a legal agreement or job submission.
+                  I confirm I am allowed to share these job details with
+                  IMFORCE for this job order enquiry.
                 </span>
               </label>
             </div>
@@ -699,7 +717,7 @@ function Employers() {
           </div>
 
           <p className="employers-review__notice">
-            This is a preview only. Your details have not been sent or saved.
+            Check the information below. Confirming sends this job order enquiry to IMFORCE.
           </p>
 
           <section className="employers-review__section">
@@ -737,7 +755,7 @@ function Employers() {
                 One fee per job order, regardless of the number of people hired.
               </p>
             </div>
-            <strong>R499</strong>
+            <strong>ZAR 499</strong>
             <p className="employers-review__vat-note">
               Estimate only. VAT treatment is still being confirmed by IMFORCE
               Finance, so VAT is not included in this estimate.
@@ -745,12 +763,7 @@ function Employers() {
           </section>
 
           <div className="employers-review__footer">
-            {checkoutUnavailable && (
-              <p className="employers-review__checkout-note" role="status">
-                Paystack checkout is not connected yet. No payment was made and
-                your details were not sent.
-              </p>
-            )}
+            {submissionStatus && <p role="status">{submissionStatus}</p>}
             <div className="employers-review__actions">
               <button
                 className="employers-button employers-button--secondary"
@@ -762,9 +775,24 @@ function Employers() {
               <button
                 className="employers-button employers-button--primary"
                 type="button"
-                onClick={() => setCheckoutUnavailable(true)}
+                disabled={submitting || submissionStatus.startsWith('Your job order enquiry has been sent.')}
+                onClick={async () => {
+                  const form = formRef.current
+                  if (!form) return
+                  setSubmitting(true); setSubmissionStatus('')
+                  const values = Object.fromEntries(new FormData(form).entries())
+                  const details = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'jobDescription').map(([key, value]) => [key, key === 'authorizedContact' ? value === 'on' : String(value)]))
+                  try {
+                    await submitEmployerInquiry({ details })
+                    setSubmissionStatus('Your job order enquiry has been sent. IMFORCE will contact you about next steps.')
+                    sessionStorage.removeItem(draftStorageKey)
+                    form.reset(); setClosingDate(''); setJobDescriptionName(''); setHasSavedDraft(false)
+                  } catch (error) {
+                    setSubmissionStatus(error instanceof Error ? error.message : 'Your enquiry could not be sent. Please try again.')
+                  } finally { setSubmitting(false) }
+                }}
               >
-                Checkout
+                {submitting ? 'Sending…' : submissionStatus.startsWith('Your job order enquiry has been sent.') ? 'Enquiry sent' : 'Submit job order enquiry'}
               </button>
             </div>
           </div>

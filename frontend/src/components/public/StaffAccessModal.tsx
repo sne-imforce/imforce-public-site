@@ -1,22 +1,23 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { FiEdit3, FiEye, FiLogOut, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
+import DatePicker from '../ui/DatePicker'
 import { industries, type IndustryName } from '../../data/industries'
+import { formatDateDmy } from '../../utils/dates'
+import { getStaffIdentity, getStaffInquiries, getStaffToken, saveStaffToken, staffLogin, type StaffInquiry } from '../../data/api'
 import {
   addRecruiterVacancy,
   deleteRecruiterVacancy,
+  loadStaffVacancies,
   updateRecruiterVacancy,
   useRecruiterVacancies,
 } from '../../data/recruiterVacancies'
 import type { RecruiterVacancy } from '../../data/recruiterVacancies'
 import './StaffAccessModal.css'
 
-const authorizedStaff = [{ staffId: '12345', email: 'recruiter@imforce.co.za' }]
 const employmentTypes = ['Permanent', 'Contract', 'Fixed-term', 'Temporary']
-const adminSessionKey = 'imforce-admin-session'
 
 type StaffMember = {
-  staffId: string
   email: string
 }
 
@@ -28,6 +29,8 @@ type VacancyDraft = {
   industry: IndustryName | ''
   category: string
   employmentType: string
+  isUrgent: boolean
+  closingDate: string
   salary: string
   summary: string
   responsibilities: string
@@ -41,6 +44,8 @@ const emptyDraft: VacancyDraft = {
   industry: '',
   category: '',
   employmentType: '',
+  isUrgent: false,
+  closingDate: '',
   salary: '',
   summary: '',
   responsibilities: '',
@@ -54,9 +59,13 @@ function toDraft(vacancy: Partial<RecruiterVacancy> | null | undefined): Vacancy
     title: vacancy.title ?? '',
     location: vacancy.location ?? '',
     region: vacancy.region ?? '',
-    industry: vacancy.industry ?? '',
+    industry: industries.some((industry) => industry.name === vacancy.industry)
+      ? vacancy.industry as IndustryName
+      : '',
     category: vacancy.category ?? '',
     employmentType: vacancy.employmentType ?? '',
+    isUrgent: vacancy.isUrgent ?? false,
+    closingDate: vacancy.closingDate ?? '',
     salary: vacancy.salary ?? '',
     summary: vacancy.summary ?? '',
     responsibilities: (vacancy.responsibilities ?? []).join('\n'),
@@ -84,22 +93,15 @@ export function StaffAccessPage() {
   const [snackbarMessage, setSnackbarMessage] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<VacancyDraft>({ ...emptyDraft })
+  const [inquiries, setInquiries] = useState<StaffInquiry[]>([])
 
   useEffect(() => {
-    const savedSession = window.localStorage.getItem(adminSessionKey)
-    if (!savedSession) return
-
-    try {
-      const parsed = JSON.parse(savedSession) as Partial<StaffMember>
-      if (
-        typeof parsed.staffId === 'string' &&
-        typeof parsed.email === 'string'
-      ) {
-        setStaffMember({ staffId: parsed.staffId, email: parsed.email })
-      }
-    } catch (error) {
-      console.error('Unable to restore admin session.', error)
-    }
+    if (!getStaffToken()) return
+    void getStaffIdentity().then(async (identity) => {
+      const [, result] = await Promise.all([loadStaffVacancies(), getStaffInquiries()])
+      setStaffMember(identity)
+      setInquiries(result.inquiries)
+    }).catch(() => { saveStaffToken(null) })
   }, [])
 
   useEffect(() => {
@@ -107,15 +109,6 @@ export function StaffAccessPage() {
     const timer = window.setTimeout(() => setSnackbarMessage(''), 4000)
     return () => window.clearTimeout(timer)
   }, [snackbarMessage])
-
-  useEffect(() => {
-    if (!staffMember) {
-      window.localStorage.removeItem(adminSessionKey)
-      return
-    }
-
-    window.localStorage.setItem(adminSessionKey, JSON.stringify(staffMember))
-  }, [staffMember])
 
   const previewVacancy = useMemo<RecruiterVacancy | null>(() => {
     if (!draft.title && !draft.summary && !draft.location) return null
@@ -127,9 +120,11 @@ export function StaffAccessPage() {
       title: draft.title || 'Untitled vacancy',
       location: draft.location || 'Location pending',
       region: draft.region || 'Region pending',
-      industry: (draft.industry || 'Finance') as IndustryName,
+      industry: draft.industry,
       category: draft.category || 'General',
       employmentType: draft.employmentType || 'Permanent',
+      isUrgent: draft.isUrgent,
+      closingDate: draft.closingDate || null,
       salary: draft.salary || 'Market Related Salary',
       posted: editingId ? 'Draft update' : 'Draft preview',
       applicationUrl: null,
@@ -142,7 +137,9 @@ export function StaffAccessPage() {
   }, [draft, editingId])
 
   const resetAccess = () => {
+    saveStaffToken(null)
     setStaffMember(null)
+    setInquiries([])
     setLoginError('')
     setFormError('')
     setSnackbarMessage('')
@@ -150,25 +147,22 @@ export function StaffAccessPage() {
     setDraft({ ...emptyDraft })
   }
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const staffId = String(formData.get('staffId') ?? '').trim()
     const email = String(formData.get('email') ?? '').trim().toLowerCase()
-    const authorized = authorizedStaff.find(
-      (staff) =>
-        staff.staffId.toLowerCase() === staffId.toLowerCase() &&
-        staff.email.toLowerCase() === email,
-    )
-
-    if (!authorized) {
-      setLoginError('Those credentials do not match an authorized IMFORCE staff account.')
-      return
+    const password = String(formData.get('password') ?? '')
+    try {
+      const session = await staffLogin(email, password)
+      saveStaffToken(session.accessToken)
+      const [, result] = await Promise.all([loadStaffVacancies(), getStaffInquiries()])
+      setLoginError('')
+      setStaffMember({ email: session.email })
+      setInquiries(result.inquiries)
+      setDraft({ ...emptyDraft })
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Sign in could not be completed.')
     }
-
-    setLoginError('')
-    setStaffMember(authorized)
-    setDraft({ ...emptyDraft })
   }
 
   const beginEdit = (vacancy: RecruiterVacancy) => {
@@ -177,9 +171,12 @@ export function StaffAccessPage() {
     setFormError('')
   }
 
-  const handleDelete = (vacancyId: string) => {
+  const handleDelete = async (vacancyId: string) => {
     if (!window.confirm('Delete this vacancy from the recruiter dashboard?')) return
-    deleteRecruiterVacancy(vacancyId)
+    try { await deleteRecruiterVacancy(vacancyId) } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Vacancy could not be deleted.')
+      return
+    }
     if (editingId === vacancyId) {
       setEditingId(null)
       setDraft({ ...emptyDraft })
@@ -187,7 +184,7 @@ export function StaffAccessPage() {
     setSnackbarMessage('Vacancy removed from the recruiter board.')
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setFormError('')
     const responsibilities = draft.responsibilities
@@ -218,6 +215,8 @@ export function StaffAccessPage() {
       industry: draft.industry as IndustryName,
       category: draft.category.trim(),
       employmentType: draft.employmentType,
+      isUrgent: draft.isUrgent,
+      closingDate: draft.closingDate || null,
       salary: draft.salary.trim() || 'Market Related Salary',
       applicationUrl: null,
       summary: draft.summary.trim(),
@@ -226,10 +225,10 @@ export function StaffAccessPage() {
 
     try {
       if (editingId) {
-        updateRecruiterVacancy(editingId, vacancyPayload)
+        await updateRecruiterVacancy(editingId, vacancyPayload)
         setSnackbarMessage('Vacancy updated and saved in the recruiter board.')
       } else {
-        addRecruiterVacancy(vacancyPayload)
+        await addRecruiterVacancy(vacancyPayload)
         setSnackbarMessage('Vacancy created and published to the public listings.')
       }
 
@@ -261,20 +260,6 @@ export function StaffAccessPage() {
 
             <form className="staff-access-form" onSubmit={handleLogin}>
               <label>
-                Staff ID
-                <input
-                  name="staffId"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]{1,5}"
-                  maxLength={5}
-                  title="Enter up to 5 digits."
-                  autoComplete="username"
-                  required
-                />
-              </label>
-
-              <label>
                 Company email
                 <input
                   name="email"
@@ -282,6 +267,10 @@ export function StaffAccessPage() {
                   autoComplete="email"
                   required
                 />
+              </label>
+              <label>
+                Password
+                <input name="password" type="password" autoComplete="current-password" required />
               </label>
 
               {loginError && (
@@ -317,6 +306,44 @@ export function StaffAccessPage() {
               Signed in as <strong>{staffMember.email}</strong>. Create a new job,
               preview the public card, and update or delete existing recruiter posts.
             </p>
+
+            <section className="staff-access-page__list" aria-labelledby="staff-inquiries-title">
+              <div className="staff-access-page__list-header">
+                <h2 id="staff-inquiries-title">Recent enquiries</h2>
+                <span>{inquiries.length}</span>
+              </div>
+              {inquiries.length === 0 ? (
+                <p className="staff-access-description">No enquiries have been received.</p>
+              ) : (
+                <ul className="staff-access-page__entries">
+                  {inquiries.map((inquiry) => {
+                    const details = inquiry.details ?? {}
+                    const title = inquiry.kind === 'contact'
+                      ? inquiry.subject ?? 'Contact enquiry'
+                      : `${String(details.jobTitle ?? 'Job order')} · ${String(details.legalName ?? '')}`
+                    return (
+                      <li key={`${inquiry.kind}-${inquiry.id}`}>
+                        <details>
+                          <summary>
+                            <strong>{title}</strong>
+                            <span>{inquiry.kind === 'contact' ? inquiry.email : String(details.email ?? '')} · {new Date(inquiry.created_at).toLocaleDateString()}</span>
+                          </summary>
+                          {inquiry.kind === 'contact' ? (
+                            <p>{inquiry.message}</p>
+                          ) : (
+                            <dl>
+                              {Object.entries(details).filter(([key]) => key !== 'authorizedContact').map(([key, value]) => (
+                                <div key={key}><dt>{key.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</dt><dd>{String(value)}</dd></div>
+                              ))}
+                            </dl>
+                          )}
+                        </details>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
 
             <div className="staff-access-page__layout">
               <div className="staff-access-page__main">
@@ -435,16 +462,32 @@ export function StaffAccessPage() {
                       </select>
                     </label>
 
+                    <label className="staff-access-fields__wide staff-access-urgent-toggle">
+                      <input
+                        type="checkbox"
+                        checked={draft.isUrgent}
+                        onChange={(event) => setDraft((current) => ({ ...current, isUrgent: event.target.checked }))}
+                      />
+                      Mark this vacancy as urgent
+                    </label>
+
                     <label>
                       Salary or package
                       <input
                         value={draft.salary}
-                        placeholder="For example, R20,000 to R25,000 per month"
+                        placeholder="For example, ZAR 20,000 to ZAR 25,000 per month"
                         onChange={(event) =>
                           setDraft((current) => ({ ...current, salary: event.target.value }))
                         }
                       />
                     </label>
+
+                    <DatePicker
+                      id="vacancy-closing-date"
+                      label="Closing date (optional)"
+                      value={draft.closingDate}
+                      onChange={(closingDate) => setDraft((current) => ({ ...current, closingDate }))}
+                    />
 
                     <label className="staff-access-fields__wide">
                       Role summary
@@ -493,11 +536,13 @@ export function StaffAccessPage() {
                   {previewVacancy ? (
                     <article className="staff-access-preview__card">
                       <span className="staff-access-preview__label">{previewVacancy.clientName}</span>
+                      {previewVacancy.isUrgent && <span className="staff-access-urgent-badge">Urgent</span>}
                       <h4>{previewVacancy.title}</h4>
                       <div className="staff-access-preview__meta">
                         <span>{previewVacancy.location}</span>
                         <span>{previewVacancy.employmentType}</span>
                         <span>{previewVacancy.salary}</span>
+                        {previewVacancy.closingDate && <span>Closes {formatDateDmy(previewVacancy.closingDate)}</span>}
                       </div>
                       <p>{previewVacancy.summary}</p>
                       <div className="staff-access-preview__footer">

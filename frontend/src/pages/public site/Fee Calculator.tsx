@@ -11,6 +11,7 @@ const INSTALMENT_COUNT = 12
 const zarFormatter = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
+  currencyDisplay: 'code',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
@@ -552,7 +553,7 @@ function FeeCalculator() {
                   placement fee per successful hire.
                 </li>
                 <li>
-                  The R499 activation fee applies once per position/job order,
+                  The ZAR 499 activation fee applies once per position/job order,
                   regardless of the number of hires for that position. It is
                   credited against that position’s first placement invoice.
                 </li>

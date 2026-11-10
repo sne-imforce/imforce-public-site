@@ -1,10 +1,8 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useRecruiterVacancies } from '../../data/recruiterVacancies'
-import {
-  recentVacancies,
-  type Vacancy,
-  urgentVacancies,
-} from '../../data/vacancies'
+import { loadPublicVacancies, useRecruiterVacancies, useVacancyStatus } from '../../data/recruiterVacancies'
+import type { Vacancy } from '../../data/vacancies'
+import { formatDateDmy } from '../../utils/dates'
 import './JobsAndInsights.css'
 
 const insightCards = [
@@ -57,19 +55,19 @@ const imforceHighlights = [
 
 type VacancyCardProps = {
   vacancy: Vacancy
-  urgent?: boolean
   onSelect: (vacancy: Vacancy) => void
 }
 
-function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
+function VacancyCard({ vacancy, onSelect }: VacancyCardProps) {
+  const urgent = vacancy.isUrgent
   return (
     <article className="vacancy-card">
       <span className="vacancy-card__badges">
         <span className={`vacancy-badge${urgent ? ' vacancy-badge--urgent' : ''}`}>
           {urgent ? 'Urgent' : 'Recently added'}
         </span>
-        <span className="vacancy-badge vacancy-badge--sample">
-          {vacancy.source === 'recruiter' ? 'Recruiter post · preview' : 'Sample listing'}
+        <span className="vacancy-badge">
+          Current vacancy
         </span>
       </span>
       <span className="vacancy-card__title">{vacancy.title}</span>
@@ -77,6 +75,7 @@ function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
         <span>{vacancy.location}</span>
         <span>{vacancy.employmentType}</span>
         {vacancy.salary && <span>{vacancy.salary}</span>}
+        {vacancy.closingDate && <span>Closes {formatDateDmy(vacancy.closingDate)}</span>}
       </span>
       <span className="vacancy-card__summary">{vacancy.summary}</span>
       <div className="vacancy-card__actions">
@@ -94,7 +93,11 @@ function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
 
 function JobsAndInsights() {
   const recruiterVacancies = useRecruiterVacancies()
+  const urgentVacancies = recruiterVacancies.filter((vacancy) => vacancy.isUrgent)
+  const otherVacancies = recruiterVacancies.filter((vacancy) => !vacancy.isUrgent)
+  const vacancyStatus = useVacancyStatus()
   const navigate = useNavigate()
+  useEffect(() => { void loadPublicVacancies() }, [])
 
   const selectVacancy = (vacancy: Vacancy) => {
     navigate(`/careers#job-${vacancy.id}`)
@@ -118,39 +121,41 @@ function JobsAndInsights() {
             </a>
           </div>
 
-          <aside className="vacancies-preview-note">
-            Sample cards are illustrative. Recruiter-created preview vacancies
-            are stored in this browser only.
-          </aside>
-
           <section className="vacancy-group" aria-labelledby="urgent-vacancies-title">
             <div className="vacancy-group__heading">
               <div>
                 <p className="content-eyebrow content-eyebrow--urgent">Priority openings</p>
-                <h3 id="urgent-vacancies-title">Urgent jobs</h3>
+                <h3 id="urgent-vacancies-title">Urgent openings</h3>
               </div>
             </div>
             <div className="vacancy-grid vacancy-grid--urgent">
-              {urgentVacancies.map((vacancy) => (
+              {urgentVacancies.slice(0, 3).map((vacancy) => (
                 <VacancyCard
                   key={vacancy.id}
                   vacancy={vacancy}
-                  urgent
                   onSelect={selectVacancy}
                 />
               ))}
             </div>
+            {!vacancyStatus.loading && recruiterVacancies.length === 0 && (
+              <p role={vacancyStatus.error ? 'alert' : undefined}>
+                {vacancyStatus.error || 'There are no current vacancies. Please check back soon.'}
+              </p>
+            )}
+            {!vacancyStatus.loading && recruiterVacancies.length > 0 && urgentVacancies.length === 0 && (
+              <p>There are no urgent vacancies at the moment.</p>
+            )}
           </section>
 
           <section className="vacancy-group" aria-labelledby="recent-vacancies-title">
             <div className="vacancy-group__heading">
               <div>
                 <p className="content-eyebrow">Fresh opportunities</p>
-                <h3 id="recent-vacancies-title">Most recent jobs</h3>
+                <h3 id="recent-vacancies-title">More opportunities</h3>
               </div>
             </div>
             <div className="vacancy-grid">
-              {[...recruiterVacancies, ...recentVacancies].map((vacancy) => (
+              {otherVacancies.slice(0, 3).map((vacancy) => (
                 <VacancyCard
                   key={vacancy.id}
                   vacancy={vacancy}

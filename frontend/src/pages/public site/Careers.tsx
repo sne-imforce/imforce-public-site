@@ -11,15 +11,12 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../../components/public/Navbar'
 import { getIndustryBySlug, industries } from '../../data/industries'
 import {
-  getRecruiterVacancies,
+  loadPublicVacancies,
   useRecruiterVacancies,
+  useVacancyStatus,
 } from '../../data/recruiterVacancies'
-import {
-  nexoraAiApplicationUrl,
-  recentVacancies,
-  urgentVacancies,
-  type Vacancy,
-} from '../../data/vacancies'
+import type { Vacancy } from '../../data/vacancies'
+import { formatDateDmy } from '../../utils/dates'
 import './Careers.css'
 
 const filterStorageKey = 'imforce-careers-filters'
@@ -36,15 +33,6 @@ const defaultFilters: Filters = {
   category: 'all',
   location: 'all',
   employmentType: 'all',
-}
-
-function getSecureApplicationUrl(value: string) {
-  try {
-    const destination = new URL(value)
-    return destination.protocol === 'https:' ? destination.href : null
-  } catch {
-    return null
-  }
 }
 
 function loadSavedFilters(vacancies: Vacancy[]): Filters {
@@ -104,8 +92,10 @@ function Careers() {
   const location = useLocation()
   const navigate = useNavigate()
   const recruiterVacancies = useRecruiterVacancies()
+  const vacancyStatus = useVacancyStatus()
+  useEffect(() => { void loadPublicVacancies() }, [])
   const vacancies = useMemo(
-    () => [...urgentVacancies, ...recentVacancies, ...recruiterVacancies],
+    () => recruiterVacancies,
     [recruiterVacancies],
   )
   const categories = useMemo(
@@ -122,16 +112,9 @@ function Careers() {
   )
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<Filters>(() =>
-    loadSavedFilters([...urgentVacancies, ...recentVacancies, ...getRecruiterVacancies()]),
+    loadSavedFilters(recruiterVacancies),
   )
-  const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null)
-  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null)
-  const applicationUrl = selectedVacancy?.applicationUrl ?? nexoraAiApplicationUrl
-  const secureApplicationUrl = getSecureApplicationUrl(applicationUrl)
-  const redirectMessage =
-    redirectCountdown === 0 && !secureApplicationUrl
-      ? 'The Nexora AI link for this role is not ready yet. Please contact IMFORCE for help.'
-      : ''
+  const [selectedVacancyId, setSelectedVacancyId] = useState<string | null>(null)
   const filteredVacancies = useMemo(() => {
     const query = search.trim().toLowerCase()
 
@@ -161,6 +144,11 @@ function Careers() {
       )
     })
   }, [filters, search, vacancies])
+  const hashVacancyId = location.hash.startsWith('#job-') ? location.hash.slice(5) : null
+  const selectedVacancy =
+    filteredVacancies.find((vacancy) => vacancy.id === hashVacancyId) ??
+    filteredVacancies.find((vacancy) => vacancy.id === selectedVacancyId) ??
+    filteredVacancies[0] ?? null
 
   useEffect(() => {
     if (location.hash !== '#vacancies') return
@@ -200,48 +188,8 @@ function Careers() {
     }
   }, [filters])
 
-  useEffect(() => {
-    setRedirectCountdown(null)
-  }, [selectedVacancy])
-
-  useEffect(() => {
-    if (filteredVacancies.length === 0) {
-      setSelectedVacancy(null)
-      return
-    }
-
-    if (
-      !selectedVacancy ||
-      !filteredVacancies.some((vacancy) => vacancy.id === selectedVacancy.id)
-    ) {
-      setSelectedVacancy(filteredVacancies[0])
-    }
-  }, [filteredVacancies, selectedVacancy])
-
-  useEffect(() => {
-    if (redirectCountdown === null || redirectCountdown === 0) return
-
-    const timer = window.setTimeout(() => {
-      setRedirectCountdown((current) =>
-        current === null ? null : Math.max(current - 1, 0),
-      )
-    }, 1000)
-
-    return () => window.clearTimeout(timer)
-  }, [redirectCountdown])
-
-  useEffect(() => {
-    if (redirectCountdown !== 0) return
-    if (!secureApplicationUrl) {
-      console.error('The Nexora AI application link must be a valid HTTPS URL.')
-      return
-    }
-
-    window.location.assign(secureApplicationUrl)
-  }, [redirectCountdown, secureApplicationUrl])
-
   const handleSelectVacancy = (vacancy: Vacancy) => {
-    setSelectedVacancy(vacancy)
+    setSelectedVacancyId(vacancy.id)
     const vacancyAnchor = `job-${vacancy.id}`
     if (window.location.hash !== `#${vacancyAnchor}`) {
       window.history.replaceState(null, '', `${window.location.pathname}#${vacancyAnchor}`)
@@ -253,24 +201,6 @@ function Careers() {
       })
     })
   }
-
-  useEffect(() => {
-    const hashVacancyId = window.location.hash.startsWith('#job-')
-      ? window.location.hash.slice(5)
-      : null
-
-    if (!hashVacancyId) {
-      if (!selectedVacancy && filteredVacancies.length > 0) {
-        setSelectedVacancy(filteredVacancies[0])
-      }
-      return
-    }
-
-    const matchingVacancy = vacancies.find((vacancy) => vacancy.id === hashVacancyId)
-    if (matchingVacancy) {
-      setSelectedVacancy(matchingVacancy)
-    }
-  }, [filteredVacancies, selectedVacancy, vacancies])
 
   const resetFilters = () => {
     setSearch('')
@@ -316,24 +246,16 @@ function Careers() {
               </p>
               <h2 id="vacancies-title">Explore opportunities</h2>
               <p>
-                Browse published recruiter posts and illustrative sample
-                vacancies.
+                Browse current vacancies published by the IMFORCE team.
               </p>
             </div>
-            <span className="careers-sample-count">
+            <span className="careers-role-count">
               {filteredVacancies.length}{' '}
               {filteredVacancies.length === 1 ? 'role' : 'roles'}
             </span>
           </div>
 
-          <aside className="careers-notice">
-            <strong>Prototype listings.</strong> Sample roles are illustrative.
-            Recruiter-created posts are stored in this browser only; applications
-            are not submitted or stored. Contact{' '}
-            <a href="mailto:info@imforce.co.za">info@imforce.co.za</a> to ask
-            about current openings, or email{' '}
-            <a href="mailto:admin@imforce.co.za">admin@imforce.co.za</a>.
-          </aside>
+          {vacancyStatus.error && <p className="careers-notice" role="alert">{vacancyStatus.error}</p>}
 
           <div className="careers-filters" role="group" aria-label="Filter vacancies">
             <label className="careers-search">
@@ -439,6 +361,7 @@ function Careers() {
                       className={`careers-job-card${isSelected ? ' careers-job-card--selected' : ''}`}
                       onClick={() => handleSelectVacancy(vacancy)}
                     >
+                      {vacancy.isUrgent && <span className="careers-urgent-badge">Urgent</span>}
                       <span className="careers-job-card__location">
                         <FiMapPin aria-hidden="true" />
                         {vacancy.location}
@@ -506,6 +429,12 @@ function Careers() {
                           <FiCalendar aria-hidden="true" />
                           {selectedVacancy.posted}
                         </span>
+                        {selectedVacancy.closingDate && (
+                          <span>
+                            <FiCalendar aria-hidden="true" />
+                            Closes {formatDateDmy(selectedVacancy.closingDate)}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -513,11 +442,9 @@ function Careers() {
                       <button
                         className="careers-detail__apply"
                         type="button"
-                        onClick={() => {
-                          setRedirectCountdown(5)
-                        }}
+                        onClick={() => navigate(`/contact?subject=${encodeURIComponent(`Enquiry about ${selectedVacancy.title}`)}`)}
                       >
-                        Apply now
+                        Enquire about this role
                       </button>
                     </div>
 
@@ -543,20 +470,11 @@ function Careers() {
                       )}
                     </section>
 
-                    {redirectCountdown !== null && (
-                      <div className="careers-redirect__countdown">
-                        Redirecting in {redirectCountdown}s...
-                      </div>
-                    )}
-
-                    {redirectMessage && (
-                      <p className="careers-redirect__message">{redirectMessage}</p>
-                    )}
                   </>
                 ) : (
                   <div className="careers-empty careers-empty--detail">
-                    <h3>No matching roles</h3>
-                    <p>Try a different search or clear your filters.</p>
+                    <h3>{vacancyStatus.loading ? 'Loading vacancies' : 'No current vacancies'}</h3>
+                    <p>{vacancyStatus.loading ? 'Please wait while openings load.' : 'Check back soon or contact our team about upcoming opportunities.'}</p>
                     <button type="button" onClick={resetFilters}>
                       Clear filters
                     </button>
@@ -566,8 +484,8 @@ function Careers() {
             </div>
           ) : (
             <div className="careers-empty">
-              <h3>No matching roles</h3>
-              <p>Try a different search or clear your filters.</p>
+              <h3>{vacancyStatus.loading ? 'Loading vacancies' : 'No matching roles'}</h3>
+              <p>{vacancyStatus.loading ? 'Please wait while openings load.' : 'Try a different search or clear your filters.'}</p>
               <button type="button" onClick={resetFilters}>
                 Clear filters
               </button>

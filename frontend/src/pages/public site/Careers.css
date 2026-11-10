@@ -111,7 +111,7 @@
   font: 400 15px/1.7 var(--font-body);
 }
 
-.careers-sample-count {
+.careers-role-count {
   flex: 0 0 auto;
   padding: 9px 13px;
   border-radius: 999px;
@@ -127,11 +127,6 @@
   background: var(--color-mist);
   color: #35475b;
   font: 400 14px/1.7 var(--font-body);
-}
-
-.careers-notice a {
-  color: var(--color-primary);
-  font-weight: 700;
 }
 
 .careers-filters {
@@ -263,6 +258,17 @@
   margin: 0;
   color: var(--color-primary);
   font: 700 1.15rem/1.35 var(--font-heading);
+}
+
+.careers-urgent-badge,
+.staff-access-urgent-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #fff0ed;
+  color: #9c3d2c;
+  font: 700 11px/1 var(--font-interface);
 }
 
 .careers-job-card__meta {
@@ -425,29 +431,6 @@
 .careers-empty p {
   margin: 0 0 18px;
   color: var(--color-muted);
-}
-
-.careers-redirect__countdown,
-.careers-redirect__message {
-  margin-top: 22px;
-}
-
-.careers-redirect__countdown {
-  width: fit-content;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: var(--color-mist);
-  color: var(--color-primary);
-  font: 700 18px/1.4 var(--font-interface);
-}
-
-.careers-redirect__message {
-  margin-bottom: 0;
-  padding: 12px 14px;
-  border-left: 3px solid var(--color-accent);
-  background: var(--color-mist);
-  color: var(--color-primary);
-  font-weight: 600;
 }
 
 .careers-job-card:focus-visible,

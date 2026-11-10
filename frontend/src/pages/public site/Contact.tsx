@@ -1,9 +1,13 @@
-import { useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { submitContact } from '../../data/api'
 import Navbar from '../../components/public/Navbar'
 import './Contact.css'
 
 function Contact() {
+  const [searchParams] = useSearchParams()
+  const [sending, setSending] = useState(false)
+  const [formStatus, setFormStatus] = useState('')
   useEffect(() => {
     const previousTitle = document.title
     const description = document.querySelector<HTMLMetaElement>(
@@ -87,8 +91,19 @@ function Contact() {
 
             <form
               className="contact-form"
-              action="https://formspree.io/f/mjyypqyj"
-              method="POST"
+              onSubmit={async (event: FormEvent<HTMLFormElement>) => {
+                event.preventDefault()
+                const form = event.currentTarget
+                setSending(true); setFormStatus('')
+                const data = Object.fromEntries(new FormData(form).entries())
+                try {
+                  await submitContact(Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)])))
+                  form.reset()
+                  setFormStatus('Your message has been sent. Our team will be in touch.')
+                } catch (error) {
+                  setFormStatus(error instanceof Error ? error.message : 'Your message could not be sent. Please try again.')
+                } finally { setSending(false) }
+              }}
             >
               <input
                 type="hidden"
@@ -99,7 +114,7 @@ function Contact() {
                 Leave this field empty
                 <input
                   type="text"
-                  name="_gotcha"
+                name="website"
                   tabIndex={-1}
                   autoComplete="off"
                 />
@@ -155,7 +170,7 @@ function Contact() {
                 </label>
                 <label className="contact-form__field contact-form__field--full">
                   Subject *
-                  <input name="subject" type="text" maxLength={160} required />
+                  <input name="subject" type="text" maxLength={160} defaultValue={searchParams.get('subject') ?? ''} required />
                 </label>
                 <label className="contact-form__field contact-form__field--full">
                   Your message *
@@ -170,12 +185,13 @@ function Contact() {
 
               <p className="contact-form__privacy">
                 When you submit this form, your message is sent to IMFORCE
-                through Formspree. Do not include passwords, bank details, ID
+                securely to IMFORCE. Do not include passwords, bank details, ID
                 numbers or other sensitive information.
               </p>
 
-              <button className="contact-button" type="submit">
-                Send message
+              {formStatus && <p role="status">{formStatus}</p>}
+              <button className="contact-button" type="submit" disabled={sending}>
+                {sending ? 'Sending…' : 'Send message'}
               </button>
             </form>
           </section>

@@ -194,11 +194,6 @@
   color: #9c3d2c;
 }
 
-.vacancy-badge--sample {
-  background: #f1f3f5;
-  color: #4d5966;
-}
-
 .vacancy-card__title {
   margin-bottom: 11px;
   color: var(--color-primary);

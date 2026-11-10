@@ -1,163 +1,45 @@
 import { useSyncExternalStore } from 'react'
-import { industries } from './industries'
 import type { Vacancy } from './vacancies'
+import { getVacancies, getStaffVacancies, removeVacancy, saveVacancy } from './api'
 
-export type RecruiterVacancy = Vacancy & {
-  source: 'recruiter'
-  clientName: string
-}
-
-const storageKey = 'imforce-recruiter-vacancies'
+export type RecruiterVacancy = Vacancy & { source: 'recruiter'; clientName: string }
+let vacancies: RecruiterVacancy[] = []
+let status = { loading: true, error: '' }
 const listeners = new Set<() => void>()
-
-function isRecruiterVacancy(value: unknown): value is RecruiterVacancy {
-  if (typeof value !== 'object' || value === null) return false
-
-  const vacancy = value as Record<string, unknown>
-  return (
-    vacancy.source === 'recruiter' &&
-    typeof vacancy.id === 'string' &&
-    typeof vacancy.clientName === 'string' &&
-    typeof vacancy.title === 'string' &&
-    typeof vacancy.location === 'string' &&
-    typeof vacancy.region === 'string' &&
-    (vacancy.industry === undefined ||
-      industries.some((industry) => industry.name === vacancy.industry)) &&
-    typeof vacancy.category === 'string' &&
-    typeof vacancy.employmentType === 'string' &&
-    (typeof vacancy.salary === 'string' || vacancy.salary === undefined) &&
-    typeof vacancy.posted === 'string' &&
-    (typeof vacancy.applicationUrl === 'string' ||
-      vacancy.applicationUrl === null) &&
-    typeof vacancy.summary === 'string' &&
-    Array.isArray(vacancy.responsibilities) &&
-    vacancy.responsibilities.every(
-      (responsibility) => typeof responsibility === 'string',
-    )
-  )
-}
-
-function readStoredVacancies(): RecruiterVacancy[] {
-  try {
-    const stored = window.localStorage.getItem(storageKey)
-    if (!stored) return []
-
-    const parsed: unknown = JSON.parse(stored)
-    if (!Array.isArray(parsed) || !parsed.every(isRecruiterVacancy)) {
-      throw new Error('Stored recruiter vacancies have an invalid format.')
-    }
-
-    return parsed
-  } catch (error) {
-    console.error('Unable to load recruiter-created vacancies.', error)
-    return []
-  }
-}
-
-let recruiterVacancies = readStoredVacancies()
-
-function notifyListeners() {
-  listeners.forEach((listener) => listener())
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function getSnapshot() {
-  return recruiterVacancies
-}
-
-window.addEventListener('storage', (event) => {
-  if (event.key !== storageKey && event.key !== null) return
-  recruiterVacancies = readStoredVacancies()
-  notifyListeners()
-})
+const notify = () => listeners.forEach((listener) => listener())
+const subscribe = (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener) }
+const snapshot = () => vacancies
+const statusSnapshot = () => status
 
 export function useRecruiterVacancies() {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  return useSyncExternalStore(subscribe, snapshot, snapshot)
 }
-
-export function getRecruiterVacancies() {
-  return recruiterVacancies
+export function useVacancyStatus() {
+  return useSyncExternalStore(subscribe, statusSnapshot, statusSnapshot)
 }
-
-export function addRecruiterVacancy(
-  vacancy: Omit<RecruiterVacancy, 'id' | 'source' | 'posted'>,
-) {
-  const newVacancy: RecruiterVacancy = {
-    ...vacancy,
-    id: `recruiter-${window.crypto.randomUUID()}`,
-    source: 'recruiter',
-    posted: 'Recently added',
-  }
-  const updatedVacancies = [newVacancy, ...recruiterVacancies]
-
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
-  } catch (error) {
-    console.error('Unable to save recruiter-created vacancy.', error)
-    throw new Error('This vacancy could not be saved in this browser.', {
-      cause: error,
-    })
-  }
-
-  recruiterVacancies = updatedVacancies
-  notifyListeners()
-  return newVacancy
+export async function loadPublicVacancies() {
+  status = { loading: true, error: '' }; notify()
+  try { vacancies = (await getVacancies()).vacancies as RecruiterVacancy[] }
+  catch (cause) { status = { loading: true, error: cause instanceof Error ? cause.message : 'Vacancies could not be loaded.' } }
+  finally { status = { ...status, loading: false }; notify() }
 }
-
-export function updateRecruiterVacancy(
-  vacancyId: string,
-  updates: Partial<Omit<RecruiterVacancy, 'id' | 'source'>>,
-) {
-  const existingIndex = recruiterVacancies.findIndex(
-    (vacancy) => vacancy.id === vacancyId,
-  )
-
-  if (existingIndex === -1) {
-    throw new Error('This vacancy could not be found to update.')
-  }
-
-  const updatedVacancies = recruiterVacancies.map((vacancy) =>
-    vacancy.id === vacancyId
-      ? {
-          ...vacancy,
-          ...updates,
-        }
-      : vacancy,
-  )
-
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
-  } catch (error) {
-    console.error('Unable to update recruiter-created vacancy.', error)
-    throw new Error('This vacancy could not be updated in this browser.', {
-      cause: error,
-    })
-  }
-
-  recruiterVacancies = updatedVacancies
-  notifyListeners()
-
-  return recruiterVacancies[existingIndex]
+export async function loadStaffVacancies() {
+  status = { loading: true, error: '' }; notify()
+  try { vacancies = (await getStaffVacancies()).vacancies as RecruiterVacancy[] }
+  catch (cause) { status = { loading: true, error: cause instanceof Error ? cause.message : 'Vacancies could not be loaded.' }; throw cause }
+  finally { status = { ...status, loading: false }; notify() }
 }
-
-export function deleteRecruiterVacancy(vacancyId: string) {
-  const updatedVacancies = recruiterVacancies.filter(
-    (vacancy) => vacancy.id !== vacancyId,
-  )
-
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
-  } catch (error) {
-    console.error('Unable to delete recruiter-created vacancy.', error)
-    throw new Error('This vacancy could not be deleted in this browser.', {
-      cause: error,
-    })
-  }
-
-  recruiterVacancies = updatedVacancies
-  notifyListeners()
+export async function addRecruiterVacancy(vacancy: Omit<RecruiterVacancy, 'id' | 'source' | 'posted'>) {
+  const { vacancy: saved } = await saveVacancy(vacancy)
+  vacancies = [saved as RecruiterVacancy, ...vacancies]; notify(); return saved as RecruiterVacancy
+}
+export async function updateRecruiterVacancy(id: string, updates: Partial<Omit<RecruiterVacancy, 'id' | 'source'>>) {
+  const existing = vacancies.find((vacancy) => vacancy.id === id)
+  if (!existing) throw new Error('This vacancy could not be found to update.')
+  const { vacancy: saved } = await saveVacancy({ ...existing, ...updates }, id)
+  vacancies = vacancies.map((vacancy) => vacancy.id === id ? saved as RecruiterVacancy : vacancy); notify()
+  return saved as RecruiterVacancy
+}
+export async function deleteRecruiterVacancy(id: string) {
+  await removeVacancy(id); vacancies = vacancies.filter((vacancy) => vacancy.id !== id); notify()
 }
