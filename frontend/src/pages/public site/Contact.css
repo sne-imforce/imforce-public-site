@@ -181,15 +181,6 @@
   font: 400 12px/1.7 var(--font-body);
 }
 
-.contact-form__honeypot {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-}
-
 .contact-button {
   min-height: 48px;
   justify-self: start;
@@ -208,7 +199,7 @@
 }
 
 .contact-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.72;
 }
 

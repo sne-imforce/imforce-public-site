@@ -61,21 +61,7 @@ function isPositionReady(position: PositionInput) {
   )
 }
 
-function jobOrderPath(position: PositionInput) {
-  const params = new URLSearchParams()
-  const title = position.title.trim()
-  if (title) params.set('jobTitle', title)
-  if (position.monthlySalary.trim()) {
-    params.set('monthlySalary', position.monthlySalary.trim())
-  }
-  if (position.numberOfHires.trim()) {
-    params.set('numberOfHires', position.numberOfHires.trim())
-  }
-  const query = params.toString()
-  return `/employers${query ? `?${query}` : ''}#job-order`
-}
-
-function StartJobOrderButton({ position }: { position: PositionInput }) {
+function DiscussEstimateButton({ position }: { position: PositionInput }) {
   const ready = isPositionReady(position)
 
   if (!ready) {
@@ -84,15 +70,21 @@ function StartJobOrderButton({ position }: { position: PositionInput }) {
         className="fee-calculator-button fee-calculator-start-order is-disabled"
         aria-disabled="true"
       >
-        Start a job order
+        Complete the estimate to discuss it
       </span>
     )
   }
 
+  const jobOrderQuery = new URLSearchParams({
+    jobTitle: position.title,
+    monthlySalary: position.monthlySalary,
+    numberOfHires: position.numberOfHires,
+  })
+
   return (
     <Link
       className="fee-calculator-button fee-calculator-start-order"
-      to={jobOrderPath(position)}
+      to={`/employers?${jobOrderQuery.toString()}#job-order`}
     >
       Start a job order
     </Link>
@@ -388,7 +380,7 @@ function FeeCalculator() {
                       </div>
                     </div>
                     <div className="fee-calculator-position__actions">
-                      <StartJobOrderButton position={position} />
+                      <DiscussEstimateButton position={position} />
                       {positions.length > 1 && (
                         <button
                           className="fee-calculator-remove-position"
@@ -487,7 +479,7 @@ function FeeCalculator() {
                               <dd>{formatCurrency(position.firstInvoiceAfterCredit)}</dd>
                             </div>
                           </dl>
-                          {input && <StartJobOrderButton position={input} />}
+                          {input && <DiscussEstimateButton position={input} />}
                         </article>
                       )
                     })}

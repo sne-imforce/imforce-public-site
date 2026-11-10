@@ -40,9 +40,6 @@ function Footer() {
             Connecting employers and candidates through permanent staffing and
             placement.
           </p>
-          <div className="global-footer__brand-access">
-            <StaffAccessModal />
-          </div>
         </div>
 
         <nav className="global-footer__nav" aria-label="Footer navigation">

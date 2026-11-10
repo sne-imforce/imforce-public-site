@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /internal-ops/
+Disallow: /backup.sql
+Disallow: /.env
+Disallow: /.git/
 
 Sitemap: https://www.imforce.co.za/sitemap.xml

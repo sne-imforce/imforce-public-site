@@ -3,11 +3,14 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import Footer from './components/public/Footer'
 import { StaffAccessPage } from './components/public/StaffAccessModal'
 import Seo from './components/seo/Seo'
+import { matchHoneytokenPath } from './data/honeytokens'
 import About from './pages/public site/About'
 import Careers from './pages/public site/Careers'
 import Contact from './pages/public site/Contact'
 import FeeCalculator from './pages/public site/Fee Calculator'
 import Home from './pages/public site/Home'
+import HoneytokenPage from './pages/public site/HoneytokenPage'
+import NotFound from './pages/public site/NotFound'
 import Placement from './pages/public site/Placement'
 import Certifications from './pages/public site/certifications/Certifications'
 import Employers from './pages/public site/hire talent/Employers'
@@ -139,6 +142,11 @@ const routeSeo = {
 
 function AppContent() {
   const location = useLocation()
+  const trap = matchHoneytokenPath(location.pathname)
+  if (trap) {
+    return <HoneytokenPage trap={trap} />
+  }
+
   const seo = routeSeo[location.pathname as keyof typeof routeSeo] ?? {
     title: 'IMFORCE Talent Recruitment',
     description:
@@ -163,7 +171,7 @@ function AppContent() {
           element={<Navigate to="/certifications#credentials" replace />}
         />
         <Route path="/fee-calculator" element={<FeeCalculator />} />
-        <Route path="*" element={<Home />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       <Footer />
     </>

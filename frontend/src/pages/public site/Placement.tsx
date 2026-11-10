@@ -120,9 +120,8 @@ function Placement() {
               <p>
                 Prepare a job order with the role, location, number of hires,
                 duties, requirements, qualifications, working hours, salary
-                range and closing date. The employer page currently provides a
-                preview only; secure submission and recruiter tracking are not
-                connected.
+                range and closing date. Online job-order submission is not
+                available yet; contact our team to discuss your requirements.
               </p>
               <Link
                 className="placement-button placement-button--primary"
@@ -138,9 +137,8 @@ function Placement() {
               <h3>Looking for a permanent role?</h3>
               <p>
                 Browse approved vacancies and apply once to the matching
-                opportunity through its Nexora AI application link. The
-                listings currently shown on Careers are examples, not active
-                openings.
+                opportunity through the Nexora AI application portal. Current
+                vacancies are published by the IMFORCE team.
               </p>
               <Link
                 className="placement-button placement-button--primary"

@@ -1,0 +1,61 @@
+.not-found-page {
+  color: #fff;
+}
+
+.not-found-hero {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  padding: 138px 32px 64px;
+  background: #001a40;
+}
+
+.not-found-shell {
+  width: min(720px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.not-found-eyebrow {
+  margin: 0 0 12px;
+  color: #b6d6f1;
+  font: 700 12px/1.5 var(--font-interface);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.not-found-hero h1 {
+  margin: 0 0 16px;
+  font: 700 42px/1.15 var(--font-display, inherit);
+}
+
+.not-found-hero p {
+  margin: 0 0 28px;
+  max-width: 46ch;
+  color: rgb(255 255 255 / 82%);
+  font: 400 17px/1.6 var(--font-body);
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.not-found-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: #fff;
+  color: #012e6f;
+  font: 700 14px/1 var(--font-interface);
+  text-decoration: none;
+}
+
+.not-found-button--outline {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 45%);
+}

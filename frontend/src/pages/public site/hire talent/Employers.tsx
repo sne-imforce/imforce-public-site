@@ -1,7 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { HoneyField } from '../../../components/public/HoneyField'
 import Navbar from '../../../components/public/Navbar'
+import { TurnstileVerification } from '../../../components/public/TurnstileVerification'
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+  readFunctionErrorMessage,
+} from '../../../lib/supabase'
 import './Employers.css'
+
+const maxAttachmentSize = 10 * 1024 * 1024
 
 const processSteps = [
   {
@@ -22,251 +31,25 @@ const processSteps = [
   },
 ]
 
-const companyReviewFields = [
-  ['legalName', 'Legal company name'],
-  ['tradingName', 'Trading name'],
-  ['registrationNumber', 'Company registration number'],
-  ['vatNumber', 'VAT number'],
-  ['companyAddress', 'Company street address'],
-  ['contactName', 'Contact person'],
-  ['email', 'Contact email'],
-  ['phone', 'Contact phone'],
-  ['billingContact', 'Billing contact'],
-  ['billingAddress', 'Billing address'],
-] as const
-
-const jobReviewFields = [
-  ['jobTitle', 'Job title'],
-  ['jobLocation', 'Job location'],
-  ['numberOfHires', 'Number of people to hire'],
-  ['employmentType', 'Employment type'],
-  ['workingHours', 'Working hours'],
-  ['salary', 'Salary or salary range'],
-  ['closingDate', 'Closing date'],
-  ['duties', 'Main duties'],
-  ['requirements', 'Skills and requirements'],
-  ['qualifications', 'Qualifications and experience'],
-  ['authorizedContact', 'Authority to share these details'],
-] as const
-
-type ReviewItem = {
-  label: string
-  value: string
-}
-
-type JobOrderReview = {
-  company: ReviewItem[]
-  job: ReviewItem[]
-}
-
-type StoredDraft = Record<string, string | boolean>
-
-const draftStorageKey = 'imforce-employer-job-order-draft'
-
-const salaryPrefillFormatter = new Intl.NumberFormat('en-ZA', {
-  style: 'currency',
-  currency: 'ZAR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
-function formatSalaryPrefill(monthlySalary: string) {
-  const salary = Number(monthlySalary)
-  if (!Number.isFinite(salary) || salary <= 0) return monthlySalary.trim()
-  return `${salaryPrefillFormatter.format(salary)} per month`
-}
-
-function isDraftControl(
-  control: Element,
-): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
-  return (
-    (control instanceof HTMLInputElement ||
-      control instanceof HTMLSelectElement ||
-      control instanceof HTMLTextAreaElement) &&
-    Boolean(control.name) &&
-    !(control instanceof HTMLInputElement && control.type === 'file')
-  )
-}
-
-function applyControlValue(
-  control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
-  value: string | boolean,
-) {
-  if (control instanceof HTMLInputElement && control.type === 'checkbox') {
-    control.checked = value === true
-    return
-  }
-  if (typeof value === 'string') {
-    control.value = value
-  }
-}
-
-function readFormDraft(form: HTMLFormElement): StoredDraft {
-  const draft: StoredDraft = {}
-  for (const control of Array.from(form.elements)) {
-    if (!isDraftControl(control)) continue
-    draft[control.name] =
-      control instanceof HTMLInputElement && control.type === 'checkbox'
-        ? control.checked
-        : control.value
-  }
-  return draft
-}
-
-function isStoredDraft(value: unknown): value is StoredDraft {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.values(value).every(
-      (field) => typeof field === 'string' || typeof field === 'boolean',
-    )
-  )
-}
-
-function readStoredDraft(): { draft: StoredDraft | null; status: string } {
-  let savedDraft: string | null
-  try {
-    savedDraft = sessionStorage.getItem(draftStorageKey)
-  } catch {
-    return {
-      draft: null,
-      status:
-        'This browser could not access saved drafts. Keep this page open to avoid losing your answers.',
-    }
-  }
-
-  if (!savedDraft) {
-    return {
-      draft: null,
-      status:
-        'Your answers are saved in this browser tab as you fill in the form.',
-    }
-  }
-
-  let parsedDraft: unknown
-  try {
-    parsedDraft = JSON.parse(savedDraft)
-  } catch {
-    return {
-      draft: null,
-      status:
-        'The saved draft could not be read. Clear it below before entering your details.',
-    }
-  }
-
-  if (!isStoredDraft(parsedDraft)) {
-    return {
-      draft: null,
-      status:
-        'The saved draft has an invalid format. Clear it below before entering your details.',
-    }
-  }
-
-  return {
-    draft: parsedDraft,
-    status:
-      'Your saved answers were restored. Selected files must be added again.',
-  }
-}
-
 function Employers() {
   const [searchParams] = useSearchParams()
-  const jobTitlePrefill = searchParams.get('jobTitle')?.trim() ?? ''
-  const monthlySalaryPrefill = searchParams.get('monthlySalary')?.trim() ?? ''
-  const numberOfHiresPrefill = searchParams.get('numberOfHires')?.trim() ?? ''
-  const hasPrefill = Boolean(
-    jobTitlePrefill || monthlySalaryPrefill || numberOfHiresPrefill,
+  const monthlySalary = searchParams.get('monthlySalary') ?? ''
+  const [salaryType, setSalaryType] = useState(
+    monthlySalary ? 'specified' : 'market',
   )
-  const [jobDescriptionName, setJobDescriptionName] = useState('')
-  const [review, setReview] = useState<JobOrderReview | null>(null)
-  const [checkoutUnavailable, setCheckoutUnavailable] = useState(false)
-  const [initialDraft] = useState(readStoredDraft)
-  const [hasSavedDraft, setHasSavedDraft] = useState(
-    initialDraft.draft !== null || hasPrefill,
-  )
-  const [draftStatus, setDraftStatus] = useState(
-    hasPrefill
-      ? 'The position title, salary and number of hires were filled from the fee calculator. Selected files are not saved.'
-      : initialDraft.status,
-  )
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const formRef = useRef<HTMLFormElement>(null)
-  const today = new Date()
-  const minClosingDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const [salary, setSalary] = useState(monthlySalary)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileVersion, setTurnstileVersion] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formMessage, setFormMessage] = useState('')
+  const [formError, setFormError] = useState(false)
+  const formReady = isSupabaseConfigured()
 
-  useEffect(() => {
-    const form = formRef.current
-    if (!form) return
-
-    if (initialDraft.draft) {
-      for (const control of Array.from(form.elements)) {
-        if (!isDraftControl(control)) continue
-        const value = initialDraft.draft[control.name]
-        if (value === undefined) continue
-        applyControlValue(control, value)
-      }
-    }
-
-    const prefill: Array<[string, string]> = []
-
-    if (jobTitlePrefill) prefill.push(['jobTitle', jobTitlePrefill])
-    if (monthlySalaryPrefill) {
-      prefill.push(['salary', formatSalaryPrefill(monthlySalaryPrefill)])
-    }
-    if (numberOfHiresPrefill) {
-      prefill.push(['numberOfHires', numberOfHiresPrefill])
-    }
-
-    if (prefill.length === 0) return
-
-    for (const [name, value] of prefill) {
-      const control = form.elements.namedItem(name)
-      if (
-        control instanceof HTMLInputElement ||
-        control instanceof HTMLSelectElement ||
-        control instanceof HTMLTextAreaElement
-      ) {
-        applyControlValue(control, value)
-      }
-    }
-
-    try {
-      sessionStorage.setItem(
-        draftStorageKey,
-        JSON.stringify(readFormDraft(form)),
-      )
-    } catch {
-      queueMicrotask(() => {
-        setDraftStatus(
-          'The position details were filled from the fee calculator, but this browser could not save the draft.',
-        )
-      })
-    }
-
-    document.getElementById('job-order')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    })
-  }, [
-    initialDraft,
-    jobTitlePrefill,
-    monthlySalaryPrefill,
-    numberOfHiresPrefill,
-    searchParams,
-  ])
-
-  useEffect(() => {
-    if (!review) return
-
-    const dialog = dialogRef.current
-    if (!dialog) return
-    dialog.showModal()
-
-    return () => {
-      if (dialog.open) dialog.close()
-    }
-  }, [review])
+  const handleTurnstileError = useCallback((message: string) => {
+    setTurnstileToken('')
+    setFormMessage(message)
+    setFormError(true)
+  }, [setTurnstileToken, setFormMessage, setFormError])
 
   useEffect(() => {
     const previousTitle = document.title
@@ -278,7 +61,7 @@ function Employers() {
     document.title = 'For Employers | Permanent Staffing | IMFORCE Talent Recruitment'
     if (description) {
       description.content =
-        'Hire permanent staff with IMFORCE Talent Recruitment. Share your job requirements, complete the job order process and track recruitment progress.'
+        'Submit a job-order request to IMFORCE Talent Recruitment. Our team will confirm the details, agreement and payment steps with you.'
     }
 
     return () => {
@@ -288,6 +71,74 @@ function Employers() {
       }
     }
   }, [])
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setFormMessage('')
+    setFormError(false)
+
+    if (!formReady) {
+      setFormMessage(
+        'The job-order form is not available right now. Please email info@imforce.co.za.',
+      )
+      setFormError(true)
+      return
+    }
+
+    if (!turnstileToken) {
+      setFormMessage('Complete the security check before submitting the form.')
+      setFormError(true)
+      return
+    }
+
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const attachment = formData.get('jobDescription')
+    if (attachment instanceof File && attachment.size > maxAttachmentSize) {
+      setFormMessage('The job description file must be 10 MB or smaller.')
+      setFormError(true)
+      return
+    }
+    formData.set('turnstileToken', turnstileToken)
+    setIsSubmitting(true)
+
+    try {
+      const { data, error } = await getSupabaseClient().functions.invoke<{
+        ok: boolean
+        error?: string
+      }>('job-order', { body: formData })
+
+      if (error) {
+        throw new Error(
+          await readFunctionErrorMessage(
+            error,
+            'Unable to submit the job order. Please try again or email us.',
+          ),
+        )
+      }
+      if (!data?.ok) {
+        throw new Error(data?.error ?? 'Unable to submit the job order.')
+      }
+
+      form.reset()
+      setSalaryType('market')
+      setSalary('')
+      setFormMessage(
+        'Thank you. Your job-order request has been sent to IMFORCE. Our team will contact you about the agreement and payment steps.',
+      )
+    } catch (error) {
+      setFormMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to submit the job order. Please try again or email us.',
+      )
+      setFormError(true)
+    } finally {
+      setIsSubmitting(false)
+      setTurnstileToken('')
+      setTurnstileVersion((version) => version + 1)
+    }
+  }
 
   return (
     <>
@@ -390,125 +241,60 @@ function Employers() {
             <p className="employers-eyebrow employers-eyebrow--blue">
               Job order
             </p>
-            <h2 id="job-order-title">
-              Tell us about your company and the role.
-            </h2>
+            <h2 id="job-order-title">Tell us about your company and the role.</h2>
             <p>
-              Add the details below to preview the job order. Fields marked
-              required must be filled in.
+              Share your company and role details securely. This request is
+              private and does not publish a vacancy, start recruitment, create
+              an agreement, or charge a payment.
             </p>
+            <p>Fields marked with * are required.</p>
           </div>
-
           <aside className="employers-form-notice">
-            <strong>This form is a preview only.</strong> Your answers are
-            stored only in this browser tab so they remain after a refresh.
-            They are not sent to IMFORCE. The selected job-description file is
-            not stored and must be added again after a refresh. Clear your
-            saved draft when finished. Paystack checkout and job tracking are
-            not connected yet. Use test details only; do not enter bank or card
-            information.
+            <strong>What happens next?</strong> IMFORCE will review your request
+            and contact you to confirm the details, provide the recruitment
+            agreement, and explain payment. No payment is taken through this
+            form. Only authorized IMFORCE staff can access the submitted
+            company information and any attached job description.
           </aside>
-          {hasSavedDraft && (
-            <div className="employers-form__draft-controls">
-              <p className="employers-form__draft-status" role="status" aria-live="polite">
-                {draftStatus}
-              </p>
-              <button
-                className="employers-form__clear-draft"
-                type="button"
-                onClick={() => {
-                  try {
-                    sessionStorage.removeItem(draftStorageKey)
-                  } catch {
-                    setDraftStatus('This browser could not clear the saved draft.')
-                    return
-                  }
-                  formRef.current?.reset()
-                  setJobDescriptionName('')
-                  setReview(null)
-                  setCheckoutUnavailable(false)
-                  setHasSavedDraft(false)
-                }}
-              >
-                Clear saved draft
-              </button>
-            </div>
-          )}
 
-          <form
-            className="employers-form"
-            ref={formRef}
-            onSubmit={(event) => {
-              event.preventDefault()
-              const formData = new FormData(event.currentTarget)
-              const readFields = (
-                fields: ReadonlyArray<readonly [string, string]>,
-              ) =>
-                fields.map(([name, label]) => {
-                  const value = formData.get(name)
-                  return {
-                    label,
-                    value:
-                      name === 'authorizedContact'
-                        ? value === 'on'
-                          ? 'Confirmed'
-                          : 'Not confirmed'
-                        : String(value ?? '').trim() || 'Not provided',
-                  }
-                })
-
-              setCheckoutUnavailable(false)
-              setReview({
-                company: readFields(companyReviewFields),
-                job: readFields(jobReviewFields),
-              })
-            }}
-            onChange={(event) => {
-              const draft = readFormDraft(event.currentTarget)
-
-              try {
-                sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
-                setHasSavedDraft(true)
-                setDraftStatus(
-                  'Your answers are saved in this browser tab. Selected files are not saved.',
-                )
-              } catch {
-                setDraftStatus(
-                  'This browser could not save your draft. Keep this page open or copy your answers before refreshing.',
-                )
-              }
-            }}
-          >
+          <form className="employers-form" onSubmit={handleSubmit}>
+            <HoneyField />
             <fieldset className="employers-form__section">
               <legend>1. Company and contact details</legend>
               <div className="employers-form__grid">
                 <label className="employers-form__field">
                   Legal company name *
-                  <input name="legalName" autoComplete="organization" required />
-                </label>
-                <label className="employers-form__field">
-                  Trading name
-                  <input name="tradingName" />
-                </label>
-                <label className="employers-form__field">
-                  Company registration number *
-                  <input name="registrationNumber" required />
-                </label>
-                <label className="employers-form__field">
-                  VAT number
-                  <input name="vatNumber" />
-                </label>
-                <label className="employers-form__field employers-form__field--full">
-                  Company street address *
                   <input
-                    name="companyAddress"
-                    autoComplete="street-address"
+                    name="legalCompanyName"
+                    autoComplete="organization"
+                    maxLength={200}
                     required
                   />
                 </label>
                 <label className="employers-form__field">
-                  Contact person *
-                  <input name="contactName" autoComplete="name" required />
+                  Trading name
+                  <input name="tradingName" maxLength={200} />
+                </label>
+                <label className="employers-form__field">
+                  Company registration number *
+                  <input name="registrationNumber" maxLength={80} required />
+                </label>
+                <label className="employers-form__field">
+                  VAT number
+                  <input name="vatNumber" maxLength={80} />
+                </label>
+                <label className="employers-form__field employers-form__field--full">
+                  Company address *
+                  <textarea
+                    name="companyAddress"
+                    rows={2}
+                    maxLength={500}
+                    required
+                  />
+                </label>
+                <label className="employers-form__field">
+                  Contact name *
+                  <input name="contactName" autoComplete="name" maxLength={120} required />
                 </label>
                 <label className="employers-form__field">
                   Contact email *
@@ -516,20 +302,32 @@ function Employers() {
                     name="email"
                     type="email"
                     autoComplete="email"
+                    maxLength={254}
                     required
                   />
                 </label>
                 <label className="employers-form__field">
                   Contact phone *
-                  <input name="phone" type="tel" autoComplete="tel" required />
+                  <input
+                    name="phone"
+                    type="tel"
+                    autoComplete="tel"
+                    maxLength={40}
+                    required
+                  />
                 </label>
                 <label className="employers-form__field">
                   Billing contact *
-                  <input name="billingContact" required />
+                  <input name="billingContact" maxLength={120} required />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Billing address *
-                  <input name="billingAddress" required />
+                  <textarea
+                    name="billingAddress"
+                    rows={2}
+                    maxLength={500}
+                    required
+                  />
                 </label>
               </div>
             </fieldset>
@@ -539,11 +337,16 @@ function Employers() {
               <div className="employers-form__grid">
                 <label className="employers-form__field">
                   Job title *
-                  <input name="jobTitle" required />
+                  <input
+                    name="jobTitle"
+                    defaultValue={searchParams.get('jobTitle') ?? ''}
+                    maxLength={160}
+                    required
+                  />
                 </label>
                 <label className="employers-form__field">
                   Job location *
-                  <input name="jobLocation" required />
+                  <input name="jobLocation" maxLength={200} required />
                 </label>
                 <label className="employers-form__field">
                   Number of people to hire *
@@ -551,19 +354,20 @@ function Employers() {
                     name="numberOfHires"
                     type="number"
                     min="1"
+                    max="500"
                     step="1"
+                    defaultValue={searchParams.get('numberOfHires') ?? ''}
                     required
                   />
                 </label>
                 <label className="employers-form__field">
                   Employment type *
                   <select name="employmentType" required defaultValue="">
-                    <option value="" disabled>
-                      Choose a type
-                    </option>
+                    <option value="" disabled>Choose a type</option>
                     <option value="Permanent">Permanent</option>
                     <option value="Fixed-term">Fixed-term</option>
                     <option value="Contract">Contract</option>
+                    <option value="Temporary">Temporary</option>
                   </select>
                 </label>
                 <label className="employers-form__field">
@@ -571,6 +375,7 @@ function Employers() {
                   <input
                     name="workingHours"
                     placeholder="For example, Monday to Friday, 8 am to 5 pm"
+                    maxLength={120}
                     required
                   />
                 </label>
@@ -578,17 +383,9 @@ function Employers() {
                   Salary option *
                   <select
                     name="salaryType"
-                    defaultValue="specified"
+                    value={salaryType}
+                    onChange={(event) => setSalaryType(event.target.value)}
                     required
-                    onChange={(event) => {
-                      const salaryField =
-                        event.currentTarget.form?.elements.namedItem('salary')
-                      if (!(salaryField instanceof HTMLInputElement)) return
-                      salaryField.value =
-                        event.currentTarget.value === 'market'
-                          ? 'Market Related Salary'
-                          : ''
-                    }}
                   >
                     <option value="specified">Enter salary / range</option>
                     <option value="market">Market Related Salary</option>
@@ -599,7 +396,11 @@ function Employers() {
                   <input
                     name="salary"
                     placeholder="For example, R20,000 to R25,000 per month"
-                    required
+                    maxLength={120}
+                    value={salaryType === 'market' ? 'Market Related Salary' : salary}
+                    onChange={(event) => setSalary(event.target.value)}
+                    disabled={salaryType === 'market'}
+                    required={salaryType === 'specified'}
                   />
                 </label>
                 <label className="employers-form__field">
@@ -607,169 +408,95 @@ function Employers() {
                   <input
                     name="closingDate"
                     type="date"
-                    min={minClosingDate}
+                    min={new Date().toISOString().slice(0, 10)}
                     required
                   />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Main duties *
-                  <textarea name="duties" rows={4} required />
+                  <textarea name="duties" rows={4} maxLength={4000} required />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Skills and requirements *
-                  <textarea name="requirements" rows={4} required />
+                  <textarea
+                    name="requirements"
+                    rows={4}
+                    maxLength={4000}
+                    required
+                  />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Qualifications and experience *
-                  <textarea name="qualifications" rows={3} required />
+                  <textarea
+                    name="qualifications"
+                    rows={3}
+                    maxLength={3000}
+                    required
+                  />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
-                  Job description file (Word or PDF)
+                  Job description file (Word or PDF, optional)
                   <input
                     className="employers-form__upload"
                     name="jobDescription"
                     type="file"
-                    accept=".doc,.docx,.pdf"
-                    onChange={(event) => {
-                      setJobDescriptionName(event.target.files?.[0]?.name ?? '')
-                    }}
+                    accept=".doc,.docx,.pdf,application/msword,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   />
-                  <small>
-                    {jobDescriptionName
-                      ? `${jobDescriptionName} selected. It will not be sent or saved.`
-                      : 'Optional in this preview. Files are not uploaded.'}
-                  </small>
+                  <small>Private attachment, maximum 10 MB. Accepted formats: DOC, DOCX and PDF.</small>
                 </label>
               </div>
             </fieldset>
 
             <div className="employers-form__terms">
               <p>
-                <strong>Agreement and payment:</strong> The approved recruitment
-                agreement and its version must be provided before you can
-                accept it. Paystack checkout is not connected on this preview
-                page.
-              </p>
-              <p>
-                The R499 activation fee is charged once per job order. Any
-                placement fee is separate and will follow the signed agreement.
+                Submitting a job order is a request for IMFORCE to contact you.
+                It is not a signed recruitment agreement, does not publish a job,
+                and does not trigger a payment.
               </p>
               <label className="employers-form__checkbox">
                 <input type="checkbox" name="authorizedContact" required />
                 <span>
-                  I confirm I am allowed to share these job details for this
-                  preview. This is not a legal agreement or job submission.
+                  I confirm I am authorized to share these company and job
+                  details, and agree IMFORCE may contact me about this request.
                 </span>
               </label>
             </div>
+
+            {formReady ? (
+              <TurnstileVerification
+                key={turnstileVersion}
+                action="job-order"
+                onToken={setTurnstileToken}
+                onError={handleTurnstileError}
+              />
+            ) : (
+              <p className="employers-form-notice" role="status">
+                The secure form is temporarily unavailable. Please email{' '}
+                <a href="mailto:info@imforce.co.za">info@imforce.co.za</a>.
+              </p>
+            )}
+
+            {formMessage && (
+              <p
+                className="employers-form-notice"
+                role={formError ? 'alert' : 'status'}
+              >
+                {formMessage}
+              </p>
+            )}
 
             <div className="employers-form__actions">
               <button
                 className="employers-button employers-button--primary"
                 type="submit"
+                disabled={isSubmitting || !formReady || !turnstileToken}
               >
-                Check job order
+                {isSubmitting ? 'Submitting…' : 'Submit job-order request'}
               </button>
             </div>
           </form>
         </section>
       </main>
-      {review && (
-        <dialog
-          className="employers-review"
-          ref={dialogRef}
-          aria-labelledby="job-order-review-title"
-          onClose={() => setReview(null)}
-        >
-          <div className="employers-review__header">
-            <div>
-              <p className="employers-eyebrow employers-eyebrow--blue">
-                Job order preview
-              </p>
-              <h2 id="job-order-review-title">Check your details</h2>
-            </div>
-            <button
-              className="employers-review__close"
-              type="button"
-              aria-label="Close job order review"
-              onClick={() => dialogRef.current?.close()}
-            >
-              ×
-            </button>
-          </div>
-
-          <p className="employers-review__notice">
-            This is a preview only. Your details have not been sent or saved.
-          </p>
-
-          <section className="employers-review__section">
-            <h3>Company and contact details</h3>
-            <dl className="employers-review__details">
-              {review.company.map(({ label, value }) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-
-          <section className="employers-review__section">
-            <h3>Job details</h3>
-            <dl className="employers-review__details">
-              {review.job.map(({ label, value }) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-              <div>
-                <dt>Job description file</dt>
-                <dd>{jobDescriptionName || 'Not provided'}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="employers-review__estimate" aria-label="Fee estimate">
-            <div>
-              <h3>Estimated activation fee</h3>
-              <p>
-                One fee per job order, regardless of the number of people hired.
-              </p>
-            </div>
-            <strong>R499</strong>
-            <p className="employers-review__vat-note">
-              Estimate only. VAT treatment is still being confirmed by IMFORCE
-              Finance, so VAT is not included in this estimate.
-            </p>
-          </section>
-
-          <div className="employers-review__footer">
-            {checkoutUnavailable && (
-              <p className="employers-review__checkout-note" role="status">
-                Paystack checkout is not connected yet. No payment was made and
-                your details were not sent.
-              </p>
-            )}
-            <div className="employers-review__actions">
-              <button
-                className="employers-button employers-button--secondary"
-                type="button"
-                onClick={() => dialogRef.current?.close()}
-              >
-                Back to edit
-              </button>
-              <button
-                className="employers-button employers-button--primary"
-                type="button"
-                onClick={() => setCheckoutUnavailable(true)}
-              >
-                Checkout
-              </button>
-            </div>
-          </div>
-        </dialog>
-      )}
     </>
   )
 }

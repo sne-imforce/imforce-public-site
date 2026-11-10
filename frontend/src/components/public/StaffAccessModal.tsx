@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { FiEdit3, FiEye, FiLogOut, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
+import { useContactEnquiries } from '../../data/contactEnquiries'
 import { industries, type IndustryName } from '../../data/industries'
 import {
-  addRecruiterVacancy,
+  createJobOrderAttachmentUrl,
+  useJobOrders,
+} from '../../data/jobOrders'
+import type { JobOrder } from '../../data/jobOrders'
+import { useHoneytokenEvents } from '../../data/honeytokens'
+import {
   deleteRecruiterVacancy,
-  updateRecruiterVacancy,
+  saveRecruiterVacancy,
   useRecruiterVacancies,
 } from '../../data/recruiterVacancies'
 import type { RecruiterVacancy } from '../../data/recruiterVacancies'
+import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase'
 import './StaffAccessModal.css'
 
-const authorizedStaff = [{ staffId: '12345', email: 'recruiter@imforce.co.za' }]
 const employmentTypes = ['Permanent', 'Contract', 'Fixed-term', 'Temporary']
-const adminSessionKey = 'imforce-admin-session'
 
 type StaffMember = {
-  staffId: string
   email: string
 }
 
@@ -29,6 +33,7 @@ type VacancyDraft = {
   category: string
   employmentType: string
   salary: string
+  urgent: boolean
   summary: string
   responsibilities: string
 }
@@ -42,6 +47,7 @@ const emptyDraft: VacancyDraft = {
   category: '',
   employmentType: '',
   salary: '',
+  urgent: false,
   summary: '',
   responsibilities: '',
 }
@@ -58,6 +64,7 @@ function toDraft(vacancy: Partial<RecruiterVacancy> | null | undefined): Vacancy
     category: vacancy.category ?? '',
     employmentType: vacancy.employmentType ?? '',
     salary: vacancy.salary ?? '',
+    urgent: vacancy.urgent ?? false,
     summary: vacancy.summary ?? '',
     responsibilities: (vacancy.responsibilities ?? []).join('\n'),
   }
@@ -76,29 +83,124 @@ function StaffAccessModal() {
   )
 }
 
+function shouldSetPasswordFromCurrentUrl() {
+  const fragmentType = new URLSearchParams(window.location.hash.slice(1)).get(
+    'type',
+  )
+  const queryType = new URLSearchParams(window.location.search).get('type')
+  return ['invite', 'recovery'].includes(fragmentType ?? queryType ?? '')
+}
+
 export function StaffAccessPage() {
-  const recruiterVacancies = useRecruiterVacancies()
+  const {
+    vacancies: recruiterVacancies,
+    isLoading: isVacanciesLoading,
+    error: vacancyLoadError,
+    reload: reloadVacancies,
+  } = useRecruiterVacancies()
   const [staffMember, setStaffMember] = useState<StaffMember | null>(null)
-  const [loginError, setLoginError] = useState('')
+  const {
+    enquiries,
+    isLoading: areEnquiriesLoading,
+    error: enquiryLoadError,
+    reload: reloadEnquiries,
+  } = useContactEnquiries(Boolean(staffMember))
+  const {
+    jobOrders,
+    isLoading: areJobOrdersLoading,
+    error: jobOrderLoadError,
+    reload: reloadJobOrders,
+  } = useJobOrders(Boolean(staffMember))
+  const {
+    events: trapEvents,
+    isLoading: areTrapEventsLoading,
+    error: trapEventLoadError,
+    reload: reloadTrapEvents,
+  } = useHoneytokenEvents(Boolean(staffMember))
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(
+    shouldSetPasswordFromCurrentUrl,
+  )
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState(
+    isSupabaseConfigured()
+      ? ''
+      : 'Supabase is not configured. Add the project URL and public key to frontend/.env.local.',
+  )
+  const [loginEmail, setLoginEmail] = useState('')
+  const [passwordDraft, setPasswordDraft] = useState('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const [formError, setFormError] = useState('')
   const [snackbarMessage, setSnackbarMessage] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<VacancyDraft>({ ...emptyDraft })
+  const [attachmentLinks, setAttachmentLinks] = useState<Record<string, string>>({})
+  const [attachmentLoadingId, setAttachmentLoadingId] = useState('')
+  const [attachmentError, setAttachmentError] = useState('')
 
   useEffect(() => {
-    const savedSession = window.localStorage.getItem(adminSessionKey)
-    if (!savedSession) return
+    if (!isSupabaseConfigured()) return
 
-    try {
-      const parsed = JSON.parse(savedSession) as Partial<StaffMember>
-      if (
-        typeof parsed.staffId === 'string' &&
-        typeof parsed.email === 'string'
-      ) {
-        setStaffMember({ staffId: parsed.staffId, email: parsed.email })
+    let active = true
+    const supabase = getSupabaseClient()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setNeedsPasswordSetup(true)
       }
-    } catch (error) {
-      console.error('Unable to restore admin session.', error)
+      if (event === 'SIGNED_OUT' && active) {
+        setStaffMember(null)
+        setAttachmentLinks({})
+        setAuthLoading(false)
+      }
+    })
+
+    void supabase.auth
+      .getSession()
+      .then(async ({ data, error }) => {
+        if (!active) return
+        if (error) {
+          setLoginError(`Unable to restore the staff session: ${error.message}`)
+          return
+        }
+
+        const user = data.session?.user
+        if (!user) {
+          setStaffMember(null)
+          return
+        }
+
+        const { data: isStaff, error: roleError } =
+          await supabase.rpc('is_staff')
+        if (!active) return
+        if (roleError || !isStaff) {
+          await supabase.auth.signOut()
+          setLoginError(
+            roleError
+              ? `Unable to verify staff access: ${roleError.message}`
+              : 'This account does not have recruiter access.',
+          )
+          return
+        }
+
+        setStaffMember({ email: user.email ?? '' })
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setLoginError(
+          error instanceof Error
+            ? `Unable to restore the staff session: ${error.message}`
+            : 'Unable to restore the staff session.',
+        )
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false)
+      })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
     }
   }, [])
 
@@ -108,21 +210,11 @@ export function StaffAccessPage() {
     return () => window.clearTimeout(timer)
   }, [snackbarMessage])
 
-  useEffect(() => {
-    if (!staffMember) {
-      window.localStorage.removeItem(adminSessionKey)
-      return
-    }
-
-    window.localStorage.setItem(adminSessionKey, JSON.stringify(staffMember))
-  }, [staffMember])
-
   const previewVacancy = useMemo<RecruiterVacancy | null>(() => {
     if (!draft.title && !draft.summary && !draft.location) return null
 
     return {
       id: editingId ?? 'draft-vacancy',
-      source: 'recruiter',
       clientName: draft.clientName || 'Client preview',
       title: draft.title || 'Untitled vacancy',
       location: draft.location || 'Location pending',
@@ -138,37 +230,125 @@ export function StaffAccessPage() {
         .split('\n')
         .map((item) => item.trim())
         .filter(Boolean),
+      urgent: draft.urgent,
     }
   }, [draft, editingId])
 
-  const resetAccess = () => {
-    setStaffMember(null)
+  const resetAccess = async () => {
+    try {
+      const { error } = await getSupabaseClient().auth.signOut()
+      if (error) throw error
+      setStaffMember(null)
+      setAttachmentLinks({})
+    } catch (error) {
+      setSnackbarMessage(
+        error instanceof Error ? error.message : 'Unable to sign out.',
+      )
+    }
     setLoginError('')
     setFormError('')
-    setSnackbarMessage('')
     setEditingId(null)
     setDraft({ ...emptyDraft })
   }
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const staffId = String(formData.get('staffId') ?? '').trim()
     const email = String(formData.get('email') ?? '').trim().toLowerCase()
-    const authorized = authorizedStaff.find(
-      (staff) =>
-        staff.staffId.toLowerCase() === staffId.toLowerCase() &&
-        staff.email.toLowerCase() === email,
-    )
+    const password = String(formData.get('password') ?? '')
+    setLoginEmail(email)
 
-    if (!authorized) {
-      setLoginError('Those credentials do not match an authorized IMFORCE staff account.')
+    setLoginLoading(true)
+    setLoginError('')
+    try {
+      const supabase = getSupabaseClient()
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error || !data.user) {
+        throw new Error(error?.message ?? 'Unable to sign in.')
+      }
+
+      const { data: isStaff, error: roleError } =
+        await supabase.rpc('is_staff')
+      if (roleError || !isStaff) {
+        await supabase.auth.signOut()
+        throw new Error(
+          roleError?.message ??
+            'This account does not have recruiter access. Contact an administrator.',
+        )
+      }
+
+      setStaffMember({ email: data.user.email ?? email })
+      setDraft({ ...emptyDraft })
+      await reloadVacancies()
+    } catch (error) {
+      setLoginError(
+        error instanceof Error ? error.message : 'Unable to sign in.',
+      )
+    } finally {
+      setLoginLoading(false)
+    }
+  }
+
+  const handlePasswordReset = async () => {
+    const email = loginEmail.trim().toLowerCase()
+    if (!email) {
+      setLoginError('Enter your company email address first.')
       return
     }
 
+    try {
+      const { error } = await getSupabaseClient().auth.resetPasswordForEmail(
+        email,
+        { redirectTo: `${window.location.origin}/admin` },
+      )
+      if (error) throw error
+      setLoginError(
+        'If that account exists, a password setup link has been sent to its email.',
+      )
+    } catch (error) {
+      setLoginError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to send a password setup link.',
+      )
+    }
+  }
+
+  const handlePasswordSetup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     setLoginError('')
-    setStaffMember(authorized)
-    setDraft({ ...emptyDraft })
+    if (passwordDraft.length < 12) {
+      setLoginError('Choose a password with at least 12 characters.')
+      return
+    }
+    if (passwordDraft !== passwordConfirmation) {
+      setLoginError('The password entries do not match.')
+      return
+    }
+
+    try {
+      const { error } = await getSupabaseClient().auth.updateUser({
+        password: passwordDraft,
+      })
+      if (error) throw error
+      setPasswordDraft('')
+      setPasswordConfirmation('')
+      setNeedsPasswordSetup(false)
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${window.location.search}`,
+      )
+      setSnackbarMessage('Your password has been updated.')
+    } catch (error) {
+      setLoginError(
+        error instanceof Error ? error.message : 'Unable to update password.',
+      )
+    }
   }
 
   const beginEdit = (vacancy: RecruiterVacancy) => {
@@ -177,17 +357,24 @@ export function StaffAccessPage() {
     setFormError('')
   }
 
-  const handleDelete = (vacancyId: string) => {
+  const handleDelete = async (vacancyId: string) => {
     if (!window.confirm('Delete this vacancy from the recruiter dashboard?')) return
-    deleteRecruiterVacancy(vacancyId)
-    if (editingId === vacancyId) {
-      setEditingId(null)
-      setDraft({ ...emptyDraft })
+    try {
+      await deleteRecruiterVacancy(vacancyId)
+      await reloadVacancies()
+      if (editingId === vacancyId) {
+        setEditingId(null)
+        setDraft({ ...emptyDraft })
+      }
+      setSnackbarMessage('Vacancy removed from the recruiter board.')
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'Unable to delete vacancy.',
+      )
     }
-    setSnackbarMessage('Vacancy removed from the recruiter board.')
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setFormError('')
     const responsibilities = draft.responsibilities
@@ -210,7 +397,7 @@ export function StaffAccessPage() {
       return
     }
 
-    const vacancyPayload: Omit<RecruiterVacancy, 'id' | 'source' | 'posted'> = {
+    const vacancyPayload = {
       clientName: draft.clientName.trim(),
       title: draft.title.trim(),
       location: draft.location.trim(),
@@ -222,16 +409,17 @@ export function StaffAccessPage() {
       applicationUrl: null,
       summary: draft.summary.trim(),
       responsibilities,
+      urgent: draft.urgent,
     }
 
     try {
-      if (editingId) {
-        updateRecruiterVacancy(editingId, vacancyPayload)
-        setSnackbarMessage('Vacancy updated and saved in the recruiter board.')
-      } else {
-        addRecruiterVacancy(vacancyPayload)
-        setSnackbarMessage('Vacancy created and published to the public listings.')
-      }
+      await saveRecruiterVacancy(vacancyPayload, editingId)
+      await reloadVacancies()
+      setSnackbarMessage(
+        editingId
+          ? 'Vacancy updated in the public listings.'
+          : 'Vacancy published to the public listings.',
+      )
 
       setDraft({ ...emptyDraft })
       setEditingId(null)
@@ -244,10 +432,85 @@ export function StaffAccessPage() {
     }
   }
 
+  const openJobOrderAttachment = async (jobOrder: JobOrder) => {
+    if (!jobOrder.attachment_path || !jobOrder.attachment_name) return
+
+    setAttachmentLoadingId(jobOrder.id)
+    setAttachmentError('')
+    try {
+      const url = await createJobOrderAttachmentUrl(
+        jobOrder.attachment_path,
+        jobOrder.attachment_name,
+      )
+      setAttachmentLinks((current) => ({ ...current, [jobOrder.id]: url }))
+    } catch (error) {
+      setAttachmentError(
+        error instanceof Error ? error.message : 'Unable to open attachment.',
+      )
+    } finally {
+      setAttachmentLoadingId('')
+    }
+  }
+
   return (
     <main className="staff-access-page">
       <div className="staff-access-page__shell">
-        {!staffMember ? (
+        {authLoading ? (
+          <section className="staff-access-panel staff-access-panel--page staff-access-panel--login">
+            <p className="staff-access-description" role="status">
+              Checking your secure staff session…
+            </p>
+          </section>
+        ) : needsPasswordSetup && staffMember ? (
+          <section className="staff-access-panel staff-access-panel--page staff-access-panel--login">
+            <div className="staff-access-page__topbar">
+              <div>
+                <p className="staff-access-eyebrow">IMFORCE team</p>
+                <h1>Set your password</h1>
+              </div>
+              <Link className="staff-access-home" to="/">
+                HOME
+              </Link>
+            </div>
+            <p className="staff-access-description">
+              Choose a password for your recruiter account.
+            </p>
+            <form className="staff-access-form" onSubmit={handlePasswordSetup}>
+              <label>
+                New password
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  value={passwordDraft}
+                  onChange={(event) => setPasswordDraft(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Confirm password
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  value={passwordConfirmation}
+                  onChange={(event) =>
+                    setPasswordConfirmation(event.target.value)
+                  }
+                  required
+                />
+              </label>
+              {loginError && (
+                <p className="staff-access-error" role="alert">
+                  {loginError}
+                </p>
+              )}
+              <button className="staff-access-submit" type="submit">
+                Save password
+              </button>
+            </form>
+          </section>
+        ) : !staffMember ? (
           <section className="staff-access-panel staff-access-panel--page staff-access-panel--login">
             <div className="staff-access-page__topbar">
               <div>
@@ -261,25 +524,22 @@ export function StaffAccessPage() {
 
             <form className="staff-access-form" onSubmit={handleLogin}>
               <label>
-                Staff ID
-                <input
-                  name="staffId"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]{1,5}"
-                  maxLength={5}
-                  title="Enter up to 5 digits."
-                  autoComplete="username"
-                  required
-                />
-              </label>
-
-              <label>
                 Company email
                 <input
                   name="email"
                   type="email"
                   autoComplete="email"
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
                   required
                 />
               </label>
@@ -290,8 +550,20 @@ export function StaffAccessPage() {
                 </p>
               )}
 
-              <button className="staff-access-submit" type="submit">
-                Continue to recruiter dashboard
+              <button
+                className="staff-access-submit"
+                type="submit"
+                disabled={loginLoading || !isSupabaseConfigured()}
+              >
+                {loginLoading ? 'Signing in…' : 'Sign in'}
+              </button>
+              <button
+                className="staff-access-secondary"
+                type="button"
+                onClick={() => void handlePasswordReset()}
+                disabled={!isSupabaseConfigured()}
+              >
+                Set or reset password by email
               </button>
             </form>
           </section>
@@ -314,12 +586,228 @@ export function StaffAccessPage() {
             </div>
 
             <p className="staff-access-description">
-              Signed in as <strong>{staffMember.email}</strong>. Create a new job,
-              preview the public card, and update or delete existing recruiter posts.
+              Signed in as <strong>{staffMember.email}</strong>
             </p>
+
+            <section className="staff-access-page__list" aria-labelledby="trap-alerts-title">
+              <div className="staff-access-page__list-header">
+                <h2 id="trap-alerts-title">Trap alerts</h2>
+                <span>{trapEvents.length}</span>
+              </div>
+              <p className="staff-access-description">
+                These are decoy paths, fake secrets, and hidden form fields.
+                A hit means someone probed a trap, not a real system.
+              </p>
+              {trapEventLoadError && (
+                <p className="staff-access-error" role="alert">
+                  {trapEventLoadError}
+                </p>
+              )}
+              {areTrapEventsLoading ? (
+                <p className="staff-access-description" role="status">
+                  Loading trap alerts…
+                </p>
+              ) : trapEvents.length === 0 ? (
+                <p className="staff-access-description">
+                  No trap alerts have been recorded.
+                </p>
+              ) : (
+                <>
+                  {trapEvents.map((event) => (
+                    <article className="staff-access-enquiry" key={event.id}>
+                      <div className="staff-access-enquiry__heading">
+                        <strong>{event.trap_id}</strong>
+                        <time dateTime={event.created_at}>
+                          {new Date(event.created_at).toLocaleString('en-ZA')}
+                        </time>
+                      </div>
+                      <p>{event.path}</p>
+                      <p>
+                        {event.client_ip ?? 'Unknown IP'}
+                        {event.detail ? ` · ${event.detail}` : ''}
+                      </p>
+                      {event.user_agent && (
+                        <p className="staff-access-enquiry__message">
+                          {event.user_agent}
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                  <button
+                    className="staff-access-secondary"
+                    type="button"
+                    onClick={() => void reloadTrapEvents()}
+                    disabled={areTrapEventsLoading}
+                  >
+                    Refresh trap alerts
+                  </button>
+                </>
+              )}
+            </section>
+
+            <section className="staff-access-page__list" aria-labelledby="enquiries-title">
+              <div className="staff-access-page__list-header">
+                <h2 id="enquiries-title">Recent contact enquiries</h2>
+                <span>{enquiries.length}</span>
+              </div>
+              {enquiryLoadError && (
+                <p className="staff-access-error" role="alert">
+                  {enquiryLoadError}
+                </p>
+              )}
+              {areEnquiriesLoading ? (
+                <p className="staff-access-description" role="status">
+                  Loading contact enquiries…
+                </p>
+              ) : enquiries.length === 0 ? (
+                <p className="staff-access-description">
+                  No contact enquiries have been received.
+                </p>
+              ) : (
+                <>
+                  {enquiries.map((enquiry) => (
+                    <article className="staff-access-enquiry" key={enquiry.id}>
+                      <div className="staff-access-enquiry__heading">
+                        <strong>{enquiry.subject}</strong>
+                        <time dateTime={enquiry.created_at}>
+                          {new Date(enquiry.created_at).toLocaleString('en-ZA')}
+                        </time>
+                      </div>
+                      <p>
+                        {enquiry.name} ·{' '}
+                        <a href={`mailto:${encodeURIComponent(enquiry.email)}`}>
+                          {enquiry.email}
+                        </a>
+                        {enquiry.phone && ` · ${enquiry.phone}`}
+                      </p>
+                      <p>{enquiry.enquiry_type}</p>
+                      <p className="staff-access-enquiry__message">
+                        {enquiry.message}
+                      </p>
+                    </article>
+                  ))}
+                  <button
+                    className="staff-access-secondary"
+                    type="button"
+                    onClick={() => void reloadEnquiries()}
+                    disabled={areEnquiriesLoading}
+                  >
+                    Refresh enquiries
+                  </button>
+                </>
+              )}
+            </section>
+
+            <section className="staff-access-page__list" aria-labelledby="job-orders-title">
+              <div className="staff-access-page__list-header">
+                <h2 id="job-orders-title">Recent job-order requests</h2>
+                <span>{jobOrders.length}</span>
+              </div>
+              {jobOrderLoadError && (
+                <p className="staff-access-error" role="alert">
+                  {jobOrderLoadError}
+                </p>
+              )}
+              {attachmentError && (
+                <p className="staff-access-error" role="alert">
+                  {attachmentError}
+                </p>
+              )}
+              {areJobOrdersLoading ? (
+                <p className="staff-access-description" role="status">
+                  Loading job-order requests…
+                </p>
+              ) : jobOrders.length === 0 ? (
+                <p className="staff-access-description">
+                  No job-order requests have been received.
+                </p>
+              ) : (
+                <>
+                  {jobOrders.map((jobOrder) => (
+                    <article className="staff-access-enquiry" key={jobOrder.id}>
+                      <div className="staff-access-enquiry__heading">
+                        <strong>{jobOrder.job_title} · {jobOrder.legal_company_name}</strong>
+                        <time dateTime={jobOrder.created_at}>
+                          {new Date(jobOrder.created_at).toLocaleString('en-ZA')}
+                        </time>
+                      </div>
+                      <p>
+                        {jobOrder.contact_name} ·{' '}
+                        <a href={`mailto:${encodeURIComponent(jobOrder.contact_email)}`}>
+                          {jobOrder.contact_email}
+                        </a>
+                        {' · '}{jobOrder.contact_phone}
+                      </p>
+                      <p>
+                        Registration: {jobOrder.registration_number}
+                        {jobOrder.vat_number && ` · VAT: ${jobOrder.vat_number}`}
+                      </p>
+                      {jobOrder.trading_name && <p>Trading as: {jobOrder.trading_name}</p>}
+                      <p>Company address: {jobOrder.company_address}</p>
+                      <p>
+                        {jobOrder.number_of_hires} hire(s) · {jobOrder.employment_type}
+                        {' · '}{jobOrder.job_location} · {jobOrder.salary}
+                        {' · '}Closing: {jobOrder.closing_date}
+                      </p>
+                      <p>Working hours: {jobOrder.working_hours}</p>
+                      <p>
+                        Billing: {jobOrder.billing_contact} · {jobOrder.billing_address}
+                      </p>
+                      <p className="staff-access-enquiry__message">
+                        <strong>Duties:</strong> {jobOrder.duties}
+                      </p>
+                      <p className="staff-access-enquiry__message">
+                        <strong>Requirements:</strong> {jobOrder.requirements}
+                      </p>
+                      <p className="staff-access-enquiry__message">
+                        <strong>Qualifications:</strong> {jobOrder.qualifications}
+                      </p>
+                      {jobOrder.attachment_path && jobOrder.attachment_name && (
+                        <>
+                          {attachmentLinks[jobOrder.id] && (
+                          <a
+                            href={attachmentLinks[jobOrder.id]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Download {jobOrder.attachment_name} (link expires in 60 seconds)
+                          </a>
+                          )}
+                          <button
+                            className="staff-access-secondary"
+                            type="button"
+                            onClick={() => void openJobOrderAttachment(jobOrder)}
+                            disabled={attachmentLoadingId === jobOrder.id}
+                          >
+                            {attachmentLoadingId === jobOrder.id
+                              ? 'Preparing secure download…'
+                              : attachmentLinks[jobOrder.id]
+                                ? 'Generate a new download link'
+                                : `Prepare download: ${jobOrder.attachment_name}`}
+                          </button>
+                        </>
+                      )}
+                    </article>
+                  ))}
+                  <button
+                    className="staff-access-secondary"
+                    type="button"
+                    onClick={() => void reloadJobOrders()}
+                    disabled={areJobOrdersLoading}
+                  >
+                    Refresh job-order requests
+                  </button>
+                </>
+              )}
+            </section>
 
             <div className="staff-access-page__layout">
               <div className="staff-access-page__main">
+                {vacancyLoadError && (
+                  <p className="staff-access-error" role="alert">
+                    {vacancyLoadError}
+                  </p>
+                )}
                 <form className="staff-access-form staff-access-form--post" onSubmit={handleSubmit}>
                   <div className="staff-access-page__toolbar">
                     <h2>{editingId ? 'Update vacancy' : 'Add a vacancy'}</h2>
@@ -435,6 +923,20 @@ export function StaffAccessPage() {
                       </select>
                     </label>
 
+                    <label className="staff-access-paid-check">
+                      <input
+                        type="checkbox"
+                        checked={draft.urgent}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            urgent: event.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Mark this vacancy as urgent</span>
+                    </label>
+
                     <label>
                       Salary or package
                       <input
@@ -518,7 +1020,11 @@ export function StaffAccessPage() {
                     <span>{recruiterVacancies.length}</span>
                   </div>
 
-                  {recruiterVacancies.length === 0 ? (
+                  {isVacanciesLoading ? (
+                    <p className="staff-access-description" role="status">
+                      Loading vacancies…
+                    </p>
+                  ) : recruiterVacancies.length === 0 ? (
                     <p className="staff-access-description">
                       No recruiter vacancies yet.
                     </p>

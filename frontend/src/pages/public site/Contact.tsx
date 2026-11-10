@@ -1,9 +1,29 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { HoneyField } from '../../components/public/HoneyField'
 import Navbar from '../../components/public/Navbar'
+import { TurnstileVerification } from '../../components/public/TurnstileVerification'
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+  readFunctionErrorMessage,
+} from '../../lib/supabase'
 import './Contact.css'
 
 function Contact() {
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileVersion, setTurnstileVersion] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formMessage, setFormMessage] = useState('')
+  const [formError, setFormError] = useState(false)
+  const formReady = isSupabaseConfigured()
+
+  const handleTurnstileError = useCallback((message: string) => {
+    setTurnstileToken('')
+    setFormMessage(message)
+    setFormError(true)
+  }, [setTurnstileToken, setFormMessage, setFormError])
+
   useEffect(() => {
     const previousTitle = document.title
     const description = document.querySelector<HTMLMetaElement>(
@@ -24,6 +44,74 @@ function Contact() {
       }
     }
   }, [])
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setFormMessage('')
+    setFormError(false)
+
+    if (!formReady) {
+      setFormMessage(
+        'The contact form is not available right now. Please email info@imforce.co.za.',
+      )
+      setFormError(true)
+      return
+    }
+
+    if (!turnstileToken) {
+      setFormMessage('Complete the security check before sending your message.')
+      setFormError(true)
+      return
+    }
+
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    setIsSubmitting(true)
+
+    try {
+      const { data, error } = await getSupabaseClient().functions.invoke<{
+        ok: boolean
+        error?: string
+      }>('contact-enquiry', {
+        body: {
+          name: formData.get('name'),
+          email: formData.get('email'),
+          phone: formData.get('phone'),
+          enquiryType: formData.get('enquiryType'),
+          subject: formData.get('subject'),
+          message: formData.get('message'),
+          hp_website: formData.get('hp_website'),
+          turnstileToken,
+        },
+      })
+
+      if (error) {
+        throw new Error(
+          await readFunctionErrorMessage(
+            error,
+            'Unable to send your message. Please try again or email us.',
+          ),
+        )
+      }
+      if (!data?.ok) {
+        throw new Error(data?.error ?? 'Unable to send your message.')
+      }
+
+      form.reset()
+      setFormMessage('Thank you. Your message has been sent to IMFORCE.')
+    } catch (error) {
+      setFormMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to send your message. Please try again or email us.',
+      )
+      setFormError(true)
+    } finally {
+      setIsSubmitting(false)
+      setTurnstileToken('')
+      setTurnstileVersion((version) => version + 1)
+    }
+  }
 
   return (
     <>
@@ -85,26 +173,8 @@ function Contact() {
               <p>Fields marked with * are required.</p>
             </div>
 
-            <form
-              className="contact-form"
-              action="https://formspree.io/f/mjyypqyj"
-              method="POST"
-            >
-              <input
-                type="hidden"
-                name="_subject"
-                value="Website enquiry - IMFORCE"
-              />
-              <label className="contact-form__honeypot" aria-hidden="true">
-                Leave this field empty
-                <input
-                  type="text"
-                  name="_gotcha"
-                  tabIndex={-1}
-                  autoComplete="off"
-                />
-              </label>
-
+            <form className="contact-form" onSubmit={handleSubmit}>
+              <HoneyField />
               <div className="contact-form__grid">
                 <label className="contact-form__field">
                   Your name *
@@ -169,13 +239,41 @@ function Contact() {
               </div>
 
               <p className="contact-form__privacy">
-                When you submit this form, your message is sent to IMFORCE
-                through Formspree. Do not include passwords, bank details, ID
-                numbers or other sensitive information.
+                Your message is sent to IMFORCE and stored for follow-up.
+                Cloudflare Turnstile helps check for automated submissions.
+                Do not include passwords, bank details, ID numbers or other
+                sensitive information.
               </p>
 
-              <button className="contact-button" type="submit">
-                Send message
+              {formReady ? (
+                <TurnstileVerification
+                  key={turnstileVersion}
+                  action="contact"
+                  onToken={setTurnstileToken}
+                  onError={handleTurnstileError}
+                />
+              ) : (
+                <p className="contact-form__privacy" role="status">
+                  The secure form is temporarily unavailable. Please email{' '}
+                  <a href="mailto:info@imforce.co.za">info@imforce.co.za</a>.
+                </p>
+              )}
+
+              {formMessage && (
+                <p
+                  className="contact-form__privacy"
+                  role={formError ? 'alert' : 'status'}
+                >
+                  {formMessage}
+                </p>
+              )}
+
+              <button
+                className="contact-button"
+                type="submit"
+                disabled={isSubmitting || !formReady || !turnstileToken}
+              >
+                {isSubmitting ? 'Sending…' : 'Send message'}
               </button>
             </form>
           </section>

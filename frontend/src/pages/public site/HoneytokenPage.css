@@ -1,0 +1,68 @@
+.honeytoken-page {
+  min-height: 100vh;
+  margin: 0;
+  background: #111;
+  color: #ddd;
+  font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.honeytoken-page--plain {
+  padding: 24px;
+}
+
+.honeytoken-page--plain pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.honeytoken-page--login {
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background: #1d2327;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.honeytoken-login {
+  width: min(360px, 100%);
+  padding: 28px 24px;
+  border: 1px solid #3c434a;
+  background: #2c3338;
+  color: #fff;
+}
+
+.honeytoken-login h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.honeytoken-login p {
+  margin: 0 0 20px;
+  color: #c3c4c7;
+}
+
+.honeytoken-login label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.honeytoken-login input {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #8c8f94;
+  background: #fff;
+  color: #1d2327;
+}
+
+.honeytoken-login button {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  background: #2271b1;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}

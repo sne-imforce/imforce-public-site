@@ -1,10 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useRecruiterVacancies } from '../../data/recruiterVacancies'
-import {
-  recentVacancies,
-  type Vacancy,
-  urgentVacancies,
-} from '../../data/vacancies'
+import type { Vacancy } from '../../data/vacancies'
 import './JobsAndInsights.css'
 
 const insightCards = [
@@ -68,9 +64,6 @@ function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
         <span className={`vacancy-badge${urgent ? ' vacancy-badge--urgent' : ''}`}>
           {urgent ? 'Urgent' : 'Recently added'}
         </span>
-        <span className="vacancy-badge vacancy-badge--sample">
-          {vacancy.source === 'recruiter' ? 'Recruiter post · preview' : 'Sample listing'}
-        </span>
       </span>
       <span className="vacancy-card__title">{vacancy.title}</span>
       <span className="vacancy-card__meta">
@@ -93,8 +86,15 @@ function VacancyCard({ vacancy, urgent = false, onSelect }: VacancyCardProps) {
 }
 
 function JobsAndInsights() {
-  const recruiterVacancies = useRecruiterVacancies()
+  const {
+    vacancies,
+    isLoading,
+    error,
+    reload,
+  } = useRecruiterVacancies()
   const navigate = useNavigate()
+  const urgentVacancies = vacancies.filter((vacancy) => vacancy.urgent)
+  const recentVacancies = vacancies.filter((vacancy) => !vacancy.urgent)
 
   const selectVacancy = (vacancy: Vacancy) => {
     navigate(`/careers#job-${vacancy.id}`)
@@ -118,47 +118,77 @@ function JobsAndInsights() {
             </a>
           </div>
 
-          <aside className="vacancies-preview-note">
-            Sample cards are illustrative. Recruiter-created preview vacancies
-            are stored in this browser only.
+          <aside className="vacancies-note">
+            Vacancies shown here are live listings published by the IMFORCE team.
           </aside>
 
-          <section className="vacancy-group" aria-labelledby="urgent-vacancies-title">
-            <div className="vacancy-group__heading">
-              <div>
-                <p className="content-eyebrow content-eyebrow--urgent">Priority openings</p>
-                <h3 id="urgent-vacancies-title">Urgent jobs</h3>
-              </div>
+          {error ? (
+            <div className="vacancies-empty" role="alert">
+              <p>Current vacancies could not be loaded.</p>
+              <button type="button" onClick={() => void reload()}>
+                Try again
+              </button>
             </div>
-            <div className="vacancy-grid vacancy-grid--urgent">
-              {urgentVacancies.map((vacancy) => (
-                <VacancyCard
-                  key={vacancy.id}
-                  vacancy={vacancy}
-                  urgent
-                  onSelect={selectVacancy}
-                />
-              ))}
-            </div>
-          </section>
+          ) : isLoading ? (
+            <p className="vacancies-empty" role="status">
+              Loading current vacancies…
+            </p>
+          ) : vacancies.length === 0 ? (
+            <p className="vacancies-empty">
+              There are no current vacancies. Please check back soon.
+            </p>
+          ) : (
+            <>
+              {urgentVacancies.length > 0 && (
+                <section
+                  className="vacancy-group"
+                  aria-labelledby="urgent-vacancies-title"
+                >
+                  <div className="vacancy-group__heading">
+                    <div>
+                      <p className="content-eyebrow content-eyebrow--urgent">
+                        Priority openings
+                      </p>
+                      <h3 id="urgent-vacancies-title">Urgent jobs</h3>
+                    </div>
+                  </div>
+                  <div className="vacancy-grid vacancy-grid--urgent">
+                    {urgentVacancies.map((vacancy) => (
+                      <VacancyCard
+                        key={vacancy.id}
+                        vacancy={vacancy}
+                        urgent
+                        onSelect={selectVacancy}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
 
-          <section className="vacancy-group" aria-labelledby="recent-vacancies-title">
-            <div className="vacancy-group__heading">
-              <div>
-                <p className="content-eyebrow">Fresh opportunities</p>
-                <h3 id="recent-vacancies-title">Most recent jobs</h3>
-              </div>
-            </div>
-            <div className="vacancy-grid">
-              {[...recruiterVacancies, ...recentVacancies].map((vacancy) => (
-                <VacancyCard
-                  key={vacancy.id}
-                  vacancy={vacancy}
-                  onSelect={selectVacancy}
-                />
-              ))}
-            </div>
-          </section>
+              {recentVacancies.length > 0 && (
+                <section
+                  className="vacancy-group"
+                  aria-labelledby="recent-vacancies-title"
+                >
+                  <div className="vacancy-group__heading">
+                    <div>
+                      <p className="content-eyebrow">Fresh opportunities</p>
+                      <h3 id="recent-vacancies-title">Most recent jobs</h3>
+                    </div>
+                  </div>
+                  <div className="vacancy-grid">
+                    {recentVacancies.map((vacancy) => (
+                      <VacancyCard
+                        key={vacancy.id}
+                        vacancy={vacancy}
+                        onSelect={selectVacancy}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
         </div>
       </section>
 

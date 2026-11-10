@@ -68,13 +68,32 @@
   color: #fff;
 }
 
-.vacancies-preview-note {
+.vacancies-note {
   margin-top: 26px;
   padding: 12px 16px;
   border-left: 3px solid var(--color-accent);
   background: #eaf1f9;
   color: #35475b;
   font: 400 13px/1.6 var(--font-body);
+}
+
+.vacancies-empty {
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid #d6e0ea;
+  border-radius: 12px;
+  color: #35475b;
+  font: 500 15px/1.6 var(--font-body);
+}
+
+.vacancies-empty button {
+  margin-top: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: 700 14px/1.4 var(--font-interface);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .vacancy-group {
@@ -192,11 +211,6 @@
 .vacancy-badge--urgent {
   background: #fff0ed;
   color: #9c3d2c;
-}
-
-.vacancy-badge--sample {
-  background: #f1f3f5;
-  color: #4d5966;
 }
 
 .vacancy-card__title {

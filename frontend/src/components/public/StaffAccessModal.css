@@ -12,6 +12,49 @@
   text-decoration: none;
 }
 
+.staff-access-enquiry {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid rgb(1 46 111 / 10%);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--color-muted);
+  font: 400 13px/1.6 var(--font-body);
+}
+
+.staff-access-enquiry p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.staff-access-enquiry a {
+  color: var(--color-primary);
+}
+
+.staff-access-enquiry__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staff-access-enquiry__heading strong {
+  color: var(--color-primary);
+  font: 700 14px/1.4 var(--font-heading);
+}
+
+.staff-access-enquiry__heading time {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font: 500 11px/1.5 var(--font-interface);
+}
+
+.staff-access-enquiry__message {
+  white-space: pre-wrap;
+}
+
 .staff-access-page {
   min-height: 100vh;
   display: flex;
@@ -125,6 +168,7 @@
 }
 
 .staff-access-preview h3,
+.staff-access-page__list-header h2,
 .staff-access-page__list-header h3 {
   margin: 0 0 14px;
   color: var(--color-primary);
@@ -247,43 +291,9 @@
   cursor: pointer;
 }
 
-.staff-access-dialog {
-  width: min(660px, calc(100% - 32px));
-  max-height: min(90vh, 860px);
-  overflow: auto;
-  padding: 0;
-  border: 1px solid rgb(255 255 255 / 55%);
-  border-radius: 20px;
-  background: rgb(246 250 255 / 84%);
-  color: var(--color-ink);
-  box-shadow: 0 28px 90px rgb(0 13 36 / 40%);
-  backdrop-filter: blur(24px);
-}
-
-.staff-access-dialog::backdrop {
-  background: rgb(0 17 42 / 62%);
-  backdrop-filter: blur(8px);
-}
-
 .staff-access-panel {
   position: relative;
   padding: clamp(24px, 5vw, 42px);
-}
-
-.staff-access-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgb(1 46 111 / 16%);
-  border-radius: 50%;
-  background: rgb(255 255 255 / 70%);
-  color: var(--color-primary);
-  font: 400 28px/1 var(--font-interface);
-  cursor: pointer;
 }
 
 .staff-access-form {
@@ -340,7 +350,6 @@
 .staff-access-form input:focus-visible,
 .staff-access-form select:focus-visible,
 .staff-access-form textarea:focus-visible,
-.staff-access-close:focus-visible,
 .staff-access-signout:focus-visible {
   outline: 3px solid rgb(47 127 201 / 38%);
   outline-offset: 2px;
@@ -361,10 +370,10 @@
   background: #073c7e;
 }
 
-.staff-access-demo {
-  margin: 0;
-  color: #5b6b7b;
-  font: 400 11px/1.6 var(--font-interface);
+.staff-access-submit:disabled,
+.staff-access-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .staff-access-error {
@@ -459,8 +468,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .staff-access-dialog,
-  .staff-access-dialog * {
+  .staff-access-page,
+  .staff-access-page * {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }

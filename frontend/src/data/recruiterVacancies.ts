@@ -1,163 +1,192 @@
-import { useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { industries } from './industries'
 import type { Vacancy } from './vacancies'
 
 export type RecruiterVacancy = Vacancy & {
-  source: 'recruiter'
   clientName: string
 }
 
-const storageKey = 'imforce-recruiter-vacancies'
-const listeners = new Set<() => void>()
+export type RecruiterVacancyDraft = Omit<
+  RecruiterVacancy,
+  'id' | 'posted'
+>
 
-function isRecruiterVacancy(value: unknown): value is RecruiterVacancy {
-  if (typeof value !== 'object' || value === null) return false
-
-  const vacancy = value as Record<string, unknown>
-  return (
-    vacancy.source === 'recruiter' &&
-    typeof vacancy.id === 'string' &&
-    typeof vacancy.clientName === 'string' &&
-    typeof vacancy.title === 'string' &&
-    typeof vacancy.location === 'string' &&
-    typeof vacancy.region === 'string' &&
-    (vacancy.industry === undefined ||
-      industries.some((industry) => industry.name === vacancy.industry)) &&
-    typeof vacancy.category === 'string' &&
-    typeof vacancy.employmentType === 'string' &&
-    (typeof vacancy.salary === 'string' || vacancy.salary === undefined) &&
-    typeof vacancy.posted === 'string' &&
-    (typeof vacancy.applicationUrl === 'string' ||
-      vacancy.applicationUrl === null) &&
-    typeof vacancy.summary === 'string' &&
-    Array.isArray(vacancy.responsibilities) &&
-    vacancy.responsibilities.every(
-      (responsibility) => typeof responsibility === 'string',
-    )
-  )
+type VacancyRow = {
+  id: string
+  title: string
+  location: string
+  region: string
+  industry: string | null
+  category: string
+  employment_type: string
+  salary: string | null
+  application_url: string | null
+  summary: string
+  responsibilities: string[]
+  is_urgent: boolean
+  created_at: string
 }
 
-function readStoredVacancies(): RecruiterVacancy[] {
-  try {
-    const stored = window.localStorage.getItem(storageKey)
-    if (!stored) return []
+type VacancyPrivateDetailsRow = {
+  vacancy_id: string
+  client_name: string
+}
 
-    const parsed: unknown = JSON.parse(stored)
-    if (!Array.isArray(parsed) || !parsed.every(isRecruiterVacancy)) {
-      throw new Error('Stored recruiter vacancies have an invalid format.')
+function getPostedLabel(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? 'Recently added'
+    : date.toLocaleDateString('en-ZA', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+}
+
+function toRecruiterVacancy(
+  row: VacancyRow,
+  privateDetails: ReadonlyMap<string, string>,
+): RecruiterVacancy {
+  const industry = industries.find((item) => item.name === row.industry)?.name
+
+  return {
+    id: row.id,
+    title: row.title,
+    location: row.location,
+    region: row.region,
+    ...(industry ? { industry } : {}),
+    category: row.category,
+    employmentType: row.employment_type,
+    ...(row.salary ? { salary: row.salary } : {}),
+    posted: getPostedLabel(row.created_at),
+    applicationUrl: row.application_url,
+    summary: row.summary,
+    responsibilities: row.responsibilities,
+    clientName: privateDetails.get(row.id) ?? '',
+    urgent: row.is_urgent,
+  }
+}
+
+export async function fetchRecruiterVacancies() {
+  const client = getSupabaseClient()
+  const { data: isStaff, error: roleError } = await client.rpc('is_staff')
+  if (roleError) {
+    throw new Error(`Unable to verify staff access: ${roleError.message}`)
+  }
+
+  const { data, error } = await client
+    .from('vacancies')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) {
+    throw new Error(`Unable to load vacancies: ${error.message}`)
+  }
+
+  const rows: VacancyRow[] = data ?? []
+  let privateDetails = new Map<string, string>()
+
+  if (isStaff && rows.length > 0) {
+    const { data: privateRows, error: privateError } = await client
+      .from('vacancy_private_details')
+      .select('vacancy_id, client_name')
+      .in(
+        'vacancy_id',
+        rows.map((row) => row.id),
+      )
+
+    if (privateError) {
+      throw new Error(
+        `Unable to load private vacancy details: ${privateError.message}`,
+      )
     }
 
-    return parsed
-  } catch (error) {
-    console.error('Unable to load recruiter-created vacancies.', error)
-    return []
+    const details: VacancyPrivateDetailsRow[] = privateRows ?? []
+    privateDetails = new Map(
+      details.map((detail) => [detail.vacancy_id, detail.client_name]),
+    )
   }
+
+  return rows.map((row) => toRecruiterVacancy(row, privateDetails))
 }
-
-let recruiterVacancies = readStoredVacancies()
-
-function notifyListeners() {
-  listeners.forEach((listener) => listener())
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function getSnapshot() {
-  return recruiterVacancies
-}
-
-window.addEventListener('storage', (event) => {
-  if (event.key !== storageKey && event.key !== null) return
-  recruiterVacancies = readStoredVacancies()
-  notifyListeners()
-})
 
 export function useRecruiterVacancies() {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const [vacancies, setVacancies] = useState<RecruiterVacancy[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const reload = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setVacancies([])
+      const message =
+        'Supabase is not configured. Add the project URL and public key to frontend/.env.local.'
+      console.error(message)
+      setError(message)
+      setIsLoading(false)
+      return
+    }
+
+    setIsLoading(true)
+    setError('')
+    try {
+      setVacancies(await fetchRecruiterVacancies())
+    } catch (loadError) {
+      console.error('Unable to load vacancies.', loadError)
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Unable to load vacancies.',
+      )
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void Promise.resolve().then(() => {
+      if (active) return reload()
+    })
+    return () => {
+      active = false
+    }
+  }, [reload])
+
+  return { vacancies, isLoading, error, reload }
 }
 
-export function getRecruiterVacancies() {
-  return recruiterVacancies
-}
-
-export function addRecruiterVacancy(
-  vacancy: Omit<RecruiterVacancy, 'id' | 'source' | 'posted'>,
+export async function saveRecruiterVacancy(
+  vacancy: RecruiterVacancyDraft,
+  vacancyId: string | null = null,
 ) {
-  const newVacancy: RecruiterVacancy = {
-    ...vacancy,
-    id: `recruiter-${window.crypto.randomUUID()}`,
-    source: 'recruiter',
-    posted: 'Recently added',
-  }
-  const updatedVacancies = [newVacancy, ...recruiterVacancies]
+  const { error } = await getSupabaseClient().rpc('save_vacancy', {
+    p_id: vacancyId,
+    p_client_name: vacancy.clientName,
+    p_title: vacancy.title,
+    p_location: vacancy.location,
+    p_region: vacancy.region,
+    p_industry: vacancy.industry ?? null,
+    p_category: vacancy.category,
+    p_employment_type: vacancy.employmentType,
+    p_salary: vacancy.salary ?? null,
+    p_application_url: vacancy.applicationUrl,
+    p_summary: vacancy.summary,
+    p_responsibilities: vacancy.responsibilities,
+    p_is_urgent: vacancy.urgent ?? false,
+  })
 
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
-  } catch (error) {
-    console.error('Unable to save recruiter-created vacancy.', error)
-    throw new Error('This vacancy could not be saved in this browser.', {
-      cause: error,
-    })
+  if (error) {
+    throw new Error(`Unable to save vacancy: ${error.message}`)
   }
-
-  recruiterVacancies = updatedVacancies
-  notifyListeners()
-  return newVacancy
 }
 
-export function updateRecruiterVacancy(
-  vacancyId: string,
-  updates: Partial<Omit<RecruiterVacancy, 'id' | 'source'>>,
-) {
-  const existingIndex = recruiterVacancies.findIndex(
-    (vacancy) => vacancy.id === vacancyId,
-  )
+export async function deleteRecruiterVacancy(vacancyId: string) {
+  const { error } = await getSupabaseClient()
+    .from('vacancies')
+    .delete()
+    .eq('id', vacancyId)
 
-  if (existingIndex === -1) {
-    throw new Error('This vacancy could not be found to update.')
+  if (error) {
+    throw new Error(`Unable to delete vacancy: ${error.message}`)
   }
-
-  const updatedVacancies = recruiterVacancies.map((vacancy) =>
-    vacancy.id === vacancyId
-      ? {
-          ...vacancy,
-          ...updates,
-        }
-      : vacancy,
-  )
-
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
-  } catch (error) {
-    console.error('Unable to update recruiter-created vacancy.', error)
-    throw new Error('This vacancy could not be updated in this browser.', {
-      cause: error,
-    })
-  }
-
-  recruiterVacancies = updatedVacancies
-  notifyListeners()
-
-  return recruiterVacancies[existingIndex]
-}
-
-export function deleteRecruiterVacancy(vacancyId: string) {
-  const updatedVacancies = recruiterVacancies.filter(
-    (vacancy) => vacancy.id !== vacancyId,
-  )
-
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(updatedVacancies))
-  } catch (error) {
-    console.error('Unable to delete recruiter-created vacancy.', error)
-    throw new Error('This vacancy could not be deleted in this browser.', {
-      cause: error,
-    })
-  }
-
-  recruiterVacancies = updatedVacancies
-  notifyListeners()
 }

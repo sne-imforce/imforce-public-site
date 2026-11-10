@@ -1,0 +1,20 @@
+project_id = "imforce-public-site"
+
+# Configure these as Edge Function secrets in the Supabase dashboard.
+# TURNSTILE_SECRET_KEY must never be exposed as a VITE_* frontend variable.
+# ALLOWED_ORIGINS is a comma-separated list of exact production origins, for example:
+# https://www.imforce.co.za,https://imforce.co.za
+# TURNSTILE_HOSTNAMES is the production hostname allowlist (no scheme or path):
+# www.imforce.co.za,imforce.co.za
+# Local Vite origins (localhost/127.0.0.1 on ports 5173 and 4173) are allowed
+# only when the Edge Function secret ALLOW_LOCAL_ORIGINS is set to true.
+# Leave that secret unset in production.
+
+[functions.contact-enquiry]
+verify_jwt = false
+
+[functions.job-order]
+verify_jwt = false
+
+[functions.honeytoken-hit]
+verify_jwt = false
