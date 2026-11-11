@@ -17,6 +17,7 @@ import {
 import type { Vacancy } from '../../data/vacancies'
 import { formatDateDmy, formatSalary } from '../../utils/dates'
 import './Careers.css'
+import { safeHttpsUrl } from '../../utils/url'
 
 const filterStorageKey = 'imforce-careers-filters'
 
@@ -442,8 +443,8 @@ function Careers() {
                     </div>
 
                     <div className="careers-detail__actions">
-                      {selectedVacancy.applicationUrl ? (
-                        <a className="careers-detail__apply" href={selectedVacancy.applicationUrl} target="_blank" rel="noopener noreferrer">
+                      {safeHttpsUrl(selectedVacancy.applicationUrl) ? (
+                        <a className="careers-detail__apply" href={safeHttpsUrl(selectedVacancy.applicationUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
                           Apply on Nexora AI <FiArrowRight aria-hidden="true" />
                         </a>
                       ) : (

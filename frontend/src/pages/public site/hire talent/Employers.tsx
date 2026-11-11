@@ -596,6 +596,14 @@ function Employers() {
           >
             <fieldset className="employers-form__section">
               <legend>1. Company and contact details</legend>
+              {/* Bot trap: hidden from people and screen readers; bots that fill every field reveal themselves. */}
+              <label
+                aria-hidden="true"
+                style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap' }}
+              >
+                Leave this field empty
+                <input type="text" name="extraNotesHp" tabIndex={-1} autoComplete="off" defaultValue="" />
+              </label>
               <div className="employers-form__grid">
                 <label className="employers-form__field">
                   Legal company name *
@@ -728,15 +736,15 @@ function Employers() {
                 />
                 <label className="employers-form__field employers-form__field--full">
                   Main duties *
-                  <textarea id="duties" name="duties" rows={4} required />
+                  <textarea id="duties" name="duties" maxLength={5000} rows={4} required />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Skills and requirements *
-                  <textarea id="requirements" name="requirements" rows={4} required />
+                  <textarea id="requirements" name="requirements" maxLength={5000} rows={4} required />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Qualifications and experience *
-                  <textarea id="qualifications" name="qualifications" rows={3} required />
+                  <textarea id="qualifications" name="qualifications" maxLength={5000} rows={3} required />
                 </label>
               </div>
             </fieldset>

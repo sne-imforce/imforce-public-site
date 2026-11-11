@@ -10,10 +10,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       headers: { 'Content-Type': 'application/json', ...options.headers },
     })
   } catch {
-    throw new Error('The IMFORCE API could not be reached. Start the backend server and check VITE_API_BASE_URL.')
+    throw new Error('We could not reach IMFORCE right now. Check your internet connection and try again.')
   }
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.error ?? `Request failed (${response.status}).`)
+  if (response.status === 401 && path.startsWith('/staff/') && path !== '/staff/login') {
+    saveStaffToken(null)
+    sessionExpiredListeners.forEach((listener) => listener())
+  }
+  if (!response.ok) throw new Error(payload.error ?? `Something went wrong (${response.status}). Please try again.`)
   return payload as T
 }
 
@@ -29,25 +33,53 @@ export const verifyPaystackPayment = (reference: string) =>
     method: 'POST', body: JSON.stringify({ reference }),
   })
 export const staffLogin = (email: string, password: string) =>
-  request<{ accessToken: string; email: string }>('/staff/login', {
+  request<{ accessToken: string; email: string; expiresIn?: number }>('/staff/login', {
     method: 'POST', body: JSON.stringify({ email, password }),
   })
 
+// The staff token lives in sessionStorage (cleared when the tab closes), never
+// localStorage, and is discarded as soon as it expires or the server rejects it.
 const tokenKey = 'imforce-staff-access-token'
-export const getStaffToken = () => sessionStorage.getItem(tokenKey)
-export const saveStaffToken = (token: string | null) => {
-  if (token) sessionStorage.setItem(tokenKey, token)
-  else sessionStorage.removeItem(tokenKey)
+const expiryKey = 'imforce-staff-access-expires'
+const sessionExpiredListeners = new Set<() => void>()
+export const onStaffSessionExpired = (listener: () => void) => {
+  sessionExpiredListeners.add(listener)
+  return () => { sessionExpiredListeners.delete(listener) }
+}
+export const getStaffToken = () => {
+  try {
+    const expiresAt = Number(sessionStorage.getItem(expiryKey) ?? 0)
+    if (expiresAt && Date.now() >= expiresAt) { saveStaffToken(null); return null }
+    return sessionStorage.getItem(tokenKey)
+  } catch { return null }
+}
+export const getStaffTokenExpiry = () => {
+  try { return Number(sessionStorage.getItem(expiryKey) ?? 0) || null } catch { return null }
+}
+export function saveStaffToken(token: string | null, expiresInSeconds = 3600) {
+  try {
+    if (token) {
+      sessionStorage.setItem(tokenKey, token)
+      sessionStorage.setItem(expiryKey, String(Date.now() + Math.max(60, expiresInSeconds - 30) * 1000))
+    } else {
+      sessionStorage.removeItem(tokenKey)
+      sessionStorage.removeItem(expiryKey)
+    }
+  } catch { /* Storage can be unavailable in private modes; the session then lasts for this page only. */ }
 }
 const staffHeaders = () => ({ Authorization: `Bearer ${getStaffToken() ?? ''}` })
 export const getStaffVacancies = () => request<{ vacancies: Vacancy[] }>('/staff/vacancies', { headers: staffHeaders() })
+export const staffLogout = () => request<{ ok: true }>('/staff/logout', { method: 'POST', headers: staffHeaders(), body: '{}' })
 export const getStaffIdentity = () => request<{ email: string }>('/staff/me', { headers: staffHeaders() })
 
 export type StaffInquiry = {
   id: string
   kind: 'contact' | 'employer'
   created_at: string
+  name?: string
   email?: string
+  phone?: string
+  enquiry_type?: string
   subject?: string
   message?: string
   details?: Record<string, string | boolean>

@@ -105,16 +105,11 @@ function Contact() {
                 } finally { setSending(false) }
               }}
             >
-              <input
-                type="hidden"
-                name="_subject"
-                value="Website enquiry - IMFORCE"
-              />
               <label className="contact-form__honeypot" aria-hidden="true">
                 Leave this field empty
                 <input
                   type="text"
-                name="website"
+                  name="extraNotesHp"
                   tabIndex={-1}
                   autoComplete="off"
                 />

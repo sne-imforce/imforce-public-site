@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { FiEdit3, FiEye, FiLogOut, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 import DatePicker from '../ui/DatePicker'
 import { industries, type IndustryName } from '../../data/industries'
 import { formatDateDmy, formatSalary } from '../../utils/dates'
-import { getStaffIdentity, getStaffInquiries, getStaffToken, saveStaffToken, staffLogin, type StaffInquiry } from '../../data/api'
+import { getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired, saveStaffToken, staffLogin, staffLogout, type StaffInquiry } from '../../data/api'
 import {
   addRecruiterVacancy,
   deleteRecruiterVacancy,
@@ -16,6 +16,8 @@ import type { RecruiterVacancy } from '../../data/recruiterVacancies'
 import './StaffAccessModal.css'
 
 const employmentTypes = ['Permanent', 'Contract', 'Fixed-term', 'Temporary']
+const idleTimeoutMs = 15 * 60 * 1000
+const hiddenInquiryFields = new Set(['authorizedContact', 'paymentAmountMinor', 'paymentCurrency', 'paystackTransactionId'])
 
 type StaffMember = {
   email: string
@@ -97,6 +99,7 @@ export function StaffAccessPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState<VacancyDraft>({ ...emptyDraft })
   const [inquiries, setInquiries] = useState<StaffInquiry[]>([])
+  const [signingIn, setSigningIn] = useState(false)
 
   useEffect(() => {
     if (!getStaffToken()) return
@@ -139,32 +142,70 @@ export function StaffAccessPage() {
     }
   }, [draft, editingId])
 
-  const resetAccess = () => {
+  const resetAccess = useCallback((notice = '') => {
     saveStaffToken(null)
     setStaffMember(null)
     setInquiries([])
-    setLoginError('')
+    setLoginError(notice)
     setFormError('')
     setSnackbarMessage('')
     setEditingId(null)
     setDraft({ ...emptyDraft })
+  }, [])
+
+  const signOut = async () => {
+    // Revoke the session on the server so a copied token stops working too.
+    try { await staffLogout() } catch { /* The local session is cleared regardless. */ }
+    resetAccess()
   }
+
+  useEffect(() => onStaffSessionExpired(() => resetAccess('Your session has expired. Sign in again to continue.')), [resetAccess])
+
+  // Sign out automatically after inactivity or when the token expires, so an
+  // unattended office computer does not stay signed in to the dashboard.
+  useEffect(() => {
+    if (!staffMember) return
+    let idleTimer = 0
+    const expireIdle = () => {
+      void staffLogout().catch(() => undefined)
+      resetAccess('You were signed out after 15 minutes of inactivity.')
+    }
+    const resetIdle = () => { window.clearTimeout(idleTimer); idleTimer = window.setTimeout(expireIdle, idleTimeoutMs) }
+    const events = ['pointerdown', 'keydown', 'scroll', 'touchstart'] as const
+    events.forEach((name) => window.addEventListener(name, resetIdle, { passive: true }))
+    resetIdle()
+    const expiresAt = getStaffTokenExpiry()
+    const expiryTimer = expiresAt
+      ? window.setTimeout(() => resetAccess('Your session has expired. Sign in again to continue.'), Math.max(0, expiresAt - Date.now()))
+      : 0
+    return () => {
+      window.clearTimeout(idleTimer)
+      window.clearTimeout(expiryTimer)
+      events.forEach((name) => window.removeEventListener(name, resetIdle))
+    }
+  }, [staffMember, resetAccess])
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const email = String(formData.get('email') ?? '').trim().toLowerCase()
     const password = String(formData.get('password') ?? '')
+    if (signingIn) return
+    setSigningIn(true)
+    setLoginError('')
     try {
       const session = await staffLogin(email, password)
-      saveStaffToken(session.accessToken)
+      saveStaffToken(session.accessToken, session.expiresIn)
       const [, result] = await Promise.all([loadStaffVacancies(), getStaffInquiries()])
       setLoginError('')
       setStaffMember({ email: session.email })
       setInquiries(result.inquiries)
       setDraft({ ...emptyDraft })
     } catch (error) {
+      saveStaffToken(null)
       setLoginError(error instanceof Error ? error.message : 'Sign in could not be completed.')
+    } finally {
+      setSigningIn(false)
     }
   }
 
@@ -282,9 +323,12 @@ export function StaffAccessPage() {
                 </p>
               )}
 
-              <button className="staff-access-submit" type="submit">
-                Continue to recruiter dashboard
+              <button className="staff-access-submit" type="submit" disabled={signingIn} aria-busy={signingIn}>
+                {signingIn ? 'Signing in…' : 'Continue to recruiter dashboard'}
               </button>
+              <p className="staff-access-description">
+                For authorised IMFORCE staff only. Sign-in attempts are monitored and logged.
+              </p>
             </form>
           </section>
         ) : (
@@ -298,7 +342,7 @@ export function StaffAccessPage() {
                 <Link className="staff-access-home" to="/">
                   HOME
                 </Link>
-                <button className="staff-access-signout" type="button" onClick={resetAccess}>
+                <button className="staff-access-signout" type="button" onClick={() => { void signOut() }}>
                   <FiLogOut aria-hidden="true" />
                   Sign out
                 </button>
@@ -332,10 +376,15 @@ export function StaffAccessPage() {
                             <span>{inquiry.kind === 'contact' ? inquiry.email : String(details.email ?? '')} · {new Date(inquiry.created_at).toLocaleDateString()}</span>
                           </summary>
                           {inquiry.kind === 'contact' ? (
-                            <p>{inquiry.message}</p>
+                            <dl>
+                              {inquiry.name && <div><dt>name</dt><dd>{inquiry.name}</dd></div>}
+                              {inquiry.phone && <div><dt>phone</dt><dd>{inquiry.phone}</dd></div>}
+                              {inquiry.enquiry_type && <div><dt>enquiry type</dt><dd>{inquiry.enquiry_type}</dd></div>}
+                              <div><dt>message</dt><dd>{inquiry.message}</dd></div>
+                            </dl>
                           ) : (
                             <dl>
-                              {Object.entries(details).filter(([key]) => key !== 'authorizedContact').map(([key, value]) => (
+                              {Object.entries(details).filter(([key]) => !hiddenInquiryFields.has(key)).map(([key, value]) => (
                                 <div key={key}><dt>{key.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</dt><dd>{String(value)}</dd></div>
                               ))}
                             </dl>

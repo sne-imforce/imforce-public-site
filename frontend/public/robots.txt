@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /api/
+# Decoy entry: no real page lives here. Requests to it raise a security alert.
+Disallow: /api/internal/backup
 
 Sitemap: https://www.imforce.co.za/sitemap.xml

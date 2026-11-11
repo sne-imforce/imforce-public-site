@@ -123,6 +123,12 @@ const routeSeo = {
       url: 'https://www.imforce.co.za/certifications',
     },
   },
+  '/admin': {
+    title: 'Staff sign-in',
+    description: 'Authorised IMFORCE staff sign-in.',
+    keywords: [],
+    noIndex: true,
+  },
   '/fee-calculator': {
     title: 'Fee Calculator',
     description:
