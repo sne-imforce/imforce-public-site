@@ -16,7 +16,7 @@ import {
   useVacancyStatus,
 } from '../../data/recruiterVacancies'
 import type { Vacancy } from '../../data/vacancies'
-import { formatDateDmy } from '../../utils/dates'
+import { formatDateDmy, formatSalary } from '../../utils/dates'
 import './Careers.css'
 
 const filterStorageKey = 'imforce-careers-filters'
@@ -110,7 +110,8 @@ function Careers() {
     () => [...new Set(vacancies.map((vacancy) => vacancy.employmentType))].sort(),
     [vacancies],
   )
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '')
+  const [locationSearch, setLocationSearch] = useState(() => new URLSearchParams(window.location.search).get('location') ?? '')
   const [filters, setFilters] = useState<Filters>(() =>
     loadSavedFilters(recruiterVacancies),
   )
@@ -132,9 +133,11 @@ function Careers() {
           .join(' ')
           .toLowerCase()
           .includes(query)
+      const matchesLocation = !locationSearch ||
+        `${vacancy.location} ${vacancy.region}`.toLowerCase().includes(locationSearch.trim().toLowerCase())
 
       return (
-        matchesSearch &&
+        matchesSearch && matchesLocation &&
         (filters.industry === 'all' ||
           vacancy.industry === filters.industry) &&
         (filters.category === 'all' || vacancy.category === filters.category) &&
@@ -143,7 +146,7 @@ function Careers() {
           vacancy.employmentType === filters.employmentType)
       )
     })
-  }, [filters, search, vacancies])
+  }, [filters, locationSearch, search, vacancies])
   const hashVacancyId = location.hash.startsWith('#job-') ? location.hash.slice(5) : null
   const selectedVacancy =
     filteredVacancies.find((vacancy) => vacancy.id === hashVacancyId) ??
@@ -204,6 +207,7 @@ function Careers() {
 
   const resetFilters = () => {
     setSearch('')
+    setLocationSearch('')
     setFilters(defaultFilters)
     if (location.search) {
       navigate(`${location.pathname}${location.hash}`, { replace: true })
@@ -377,7 +381,7 @@ function Careers() {
                         {vacancy.salary && (
                           <span>
                             <FiDollarSign aria-hidden="true" />
-                            {vacancy.salary}
+                            {formatSalary(vacancy.salary)}
                           </span>
                         )}
                       </div>
@@ -390,7 +394,7 @@ function Careers() {
                         </span>
                         <span className="careers-job-card__date">
                           <FiCalendar aria-hidden="true" />
-                          {vacancy.posted}
+                          {formatDateDmy(vacancy.posted)}
                         </span>
                         <span className="careers-job-card__chevron">
                           <FiArrowRight aria-hidden="true" />
@@ -422,12 +426,12 @@ function Careers() {
                         {selectedVacancy.salary && (
                           <span>
                             <FiDollarSign aria-hidden="true" />
-                            {selectedVacancy.salary}
+                            {formatSalary(selectedVacancy.salary)}
                           </span>
                         )}
                         <span>
                           <FiCalendar aria-hidden="true" />
-                          {selectedVacancy.posted}
+                          {formatDateDmy(selectedVacancy.posted)}
                         </span>
                         {selectedVacancy.closingDate && (
                           <span>
@@ -439,18 +443,16 @@ function Careers() {
                     </div>
 
                     <div className="careers-detail__actions">
-                      <button
-                        className="careers-detail__apply"
-                        type="button"
-                        onClick={() => navigate(`/contact?subject=${encodeURIComponent(`Enquiry about ${selectedVacancy.title}`)}`)}
-                      >
-                        Enquire about this role
-                      </button>
+                      {selectedVacancy.applicationUrl ? (
+                        <a className="careers-detail__apply" href={selectedVacancy.applicationUrl} target="_blank" rel="noopener noreferrer">
+                          Apply on Nexora AI <FiArrowRight aria-hidden="true" />
+                        </a>
+                      ) : (
+                        <p className="careers-detail__apply-unavailable" role="status">
+                          The application link for this vacancy is not available yet. <a href={`/contact?subject=${encodeURIComponent(`Enquiry about ${selectedVacancy.title}`)}`}>Contact IMFORCE</a> for help.
+                        </p>
+                      )}
                     </div>
-
-                    <a href="#signin" className="careers-detail__signin">
-                      Have an account? Sign In
-                    </a>
 
                     <section className="careers-detail__section">
                       <h3>Role description</h3>

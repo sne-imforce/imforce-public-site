@@ -368,7 +368,21 @@
   color: #fff;
   font: 700 15px/1.3 var(--font-interface);
   cursor: pointer;
+  gap: 8px;
+  text-decoration: none;
 }
+
+.careers-detail__apply-unavailable {
+  max-width: 520px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f0f4f8;
+  color: var(--color-muted);
+  font: 400 14px/1.6 var(--font-body);
+}
+
+.careers-detail__apply-unavailable a { color: var(--color-primary); font-weight: 700; }
 
 .careers-detail__apply:hover,
 .careers-empty button:hover {

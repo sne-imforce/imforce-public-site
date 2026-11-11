@@ -15,18 +15,58 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
 const todayInSouthAfrica = () => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
 app.disable('x-powered-by')
+if (process.env.TRUST_PROXY_HOPS) {
+  const proxyHops = Number(process.env.TRUST_PROXY_HOPS)
+  if (!Number.isInteger(proxyHops) || proxyHops < 1) throw new Error('TRUST_PROXY_HOPS must be a positive integer.')
+  app.set('trust proxy', proxyHops)
+}
+if (process.env.NODE_ENV === 'production' && (!process.env.FRONTEND_ORIGIN || configuredOrigins.some((origin) => !origin.startsWith('https://')))) {
+  throw new Error('Production requires FRONTEND_ORIGIN to contain only HTTPS origins.')
+}
+if (process.env.NODE_ENV === 'production') {
+  const validOrigin = (origin) => {
+    try { const parsed = new URL(origin); return parsed.protocol === 'https:' && parsed.origin === origin }
+    catch { return false }
+  }
+  if (configuredOrigins.some((origin) => !validOrigin(origin))) throw new Error('Each production FRONTEND_ORIGIN must be an exact HTTPS origin without a path.')
+  if (!supabaseUrl || !anonKey || !serviceKey) throw new Error('Production requires Supabase URL, anon key, and service-role key configuration.')
+  try {
+    if (new URL(supabaseUrl).protocol !== 'https:') throw new Error()
+  } catch { throw new Error('Production SUPABASE_URL must be a valid HTTPS URL.') }
+}
 app.use(helmet())
 app.use(cors({ origin: allowedOrigins }))
 app.use(express.json({ limit: '32kb' }))
 
 const rateBuckets = new Map()
+const rateWindowMs = 60_000
+const rateLimits = { login: 5, publicWrite: 6, staff: 60, api: 120 }
+const rateSweep = setInterval(() => {
+  const now = Date.now()
+  for (const [key, bucket] of rateBuckets) if (bucket.resetAt <= now) rateBuckets.delete(key)
+}, rateWindowMs)
+rateSweep.unref()
 app.use('/api', (req, res, next) => {
   const now = Date.now()
-  const key = `${req.ip}:${req.path}`
-  const recent = (rateBuckets.get(key) || []).filter((stamp) => now - stamp < 60_000)
-  if (recent.length >= (req.path.startsWith('/staff') ? 60 : 10)) return res.status(429).json({ error: 'Too many requests. Try again shortly.' })
-  recent.push(now)
-  rateBuckets.set(key, recent)
+  const group = req.path === '/staff/login' ? 'login'
+    : req.path.startsWith('/staff/') ? 'staff'
+      : req.method !== 'GET' && req.path !== '/health' ? 'publicWrite' : 'api'
+  const key = `${req.ip}:${group}`
+  let bucket = rateBuckets.get(key)
+  if (!bucket || bucket.resetAt <= now) bucket = { count: 0, resetAt: now + rateWindowMs }
+  if (bucket.count >= rateLimits[group]) {
+    res.set('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)))
+    return res.status(429).json({ error: 'Too many requests. Try again shortly.' })
+  }
+  bucket.count += 1
+  if (!rateBuckets.has(key) && rateBuckets.size >= 20_000) {
+    for (const [entry, value] of rateBuckets) {
+      if (value.resetAt <= now) rateBuckets.delete(entry)
+      if (rateBuckets.size < 20_000) break
+    }
+    if (rateBuckets.size >= 20_000) rateBuckets.delete(rateBuckets.keys().next().value)
+  }
+  rateBuckets.set(key, bucket)
   next()
 })
 
@@ -44,7 +84,7 @@ async function supabase(path, { key = serviceKey, token, method = 'GET', body, p
   else if (key.startsWith('eyJ')) headers.Authorization = `Bearer ${key}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (prefer) headers.Prefer = prefer
-  const response = await fetch(`${supabaseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+  const response = await fetch(`${supabaseUrl}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(10_000) })
   const text = await response.text()
   let data = null
   try { data = text ? JSON.parse(text) : null } catch { data = null }
@@ -87,6 +127,19 @@ function fromVacancy(body) {
   if (body.closingDate && body.closingDate < todayInSouthAfrica()) {
     throw Object.assign(new Error('Choose a closing date that is today or later.'), { status: 400 })
   }
+  let applicationUrl = null
+  if (body.applicationUrl !== undefined && body.applicationUrl !== null && body.applicationUrl !== '') {
+    if (typeof body.applicationUrl !== 'string' || body.applicationUrl.length > 500) {
+      throw Object.assign(new Error('Enter a valid HTTPS application URL, up to 500 characters.'), { status: 400 })
+    }
+    try {
+      const parsedUrl = new URL(body.applicationUrl.trim())
+      if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname || parsedUrl.username || parsedUrl.password) throw new Error()
+      applicationUrl = parsedUrl.toString()
+    } catch {
+      throw Object.assign(new Error('Enter a valid HTTPS application URL.'), { status: 400 })
+    }
+  }
   const text = (value, max) => String(value || '').trim().slice(0, max)
   return {
     client_name: text(body.clientName, 160),
@@ -99,7 +152,7 @@ function fromVacancy(body) {
     is_urgent: body.isUrgent === true,
     closing_date: body.closingDate || null,
     salary: text(body.salary, 120) || null,
-    application_url: typeof body.applicationUrl === 'string' && body.applicationUrl.startsWith('https://') ? text(body.applicationUrl, 500) : null,
+    application_url: applicationUrl,
     summary: text(body.summary, 3000),
     responsibilities: body.responsibilities.slice(0, 30).map((item) => text(item, 500)).filter(Boolean),
   }
@@ -120,7 +173,7 @@ async function requireStaff(req, res, next) {
   }
 }
 
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', supabaseConfigured: Boolean(supabaseUrl && anonKey && serviceKey) }))
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 
 app.get('/api/vacancies', async (_req, res) => {
   if (!requireConfig(res)) return

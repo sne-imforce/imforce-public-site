@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { loadPublicVacancies, useRecruiterVacancies, useVacancyStatus } from '../../data/recruiterVacancies'
 import type { Vacancy } from '../../data/vacancies'
-import { formatDateDmy } from '../../utils/dates'
+import { formatDateDmy, formatSalary } from '../../utils/dates'
 import './JobsAndInsights.css'
 
 const insightCards = [
@@ -74,7 +74,7 @@ function VacancyCard({ vacancy, onSelect }: VacancyCardProps) {
       <span className="vacancy-card__meta">
         <span>{vacancy.location}</span>
         <span>{vacancy.employmentType}</span>
-        {vacancy.salary && <span>{vacancy.salary}</span>}
+        {vacancy.salary && <span>{formatSalary(vacancy.salary)}</span>}
         {vacancy.closingDate && <span>Closes {formatDateDmy(vacancy.closingDate)}</span>}
       </span>
       <span className="vacancy-card__summary">{vacancy.summary}</span>

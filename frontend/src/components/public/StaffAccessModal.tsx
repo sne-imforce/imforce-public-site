@@ -3,7 +3,7 @@ import { FiEdit3, FiEye, FiLogOut, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 import DatePicker from '../ui/DatePicker'
 import { industries, type IndustryName } from '../../data/industries'
-import { formatDateDmy } from '../../utils/dates'
+import { formatDateDmy, formatSalary } from '../../utils/dates'
 import { getStaffIdentity, getStaffInquiries, getStaffToken, saveStaffToken, staffLogin, type StaffInquiry } from '../../data/api'
 import {
   addRecruiterVacancy,
@@ -32,6 +32,7 @@ type VacancyDraft = {
   isUrgent: boolean
   closingDate: string
   salary: string
+  applicationUrl: string
   summary: string
   responsibilities: string
 }
@@ -47,6 +48,7 @@ const emptyDraft: VacancyDraft = {
   isUrgent: false,
   closingDate: '',
   salary: '',
+  applicationUrl: '',
   summary: '',
   responsibilities: '',
 }
@@ -66,7 +68,8 @@ function toDraft(vacancy: Partial<RecruiterVacancy> | null | undefined): Vacancy
     employmentType: vacancy.employmentType ?? '',
     isUrgent: vacancy.isUrgent ?? false,
     closingDate: vacancy.closingDate ?? '',
-    salary: vacancy.salary ?? '',
+    salary: formatSalary(vacancy.salary),
+    applicationUrl: vacancy.applicationUrl ?? '',
     summary: vacancy.summary ?? '',
     responsibilities: (vacancy.responsibilities ?? []).join('\n'),
   }
@@ -127,7 +130,7 @@ export function StaffAccessPage() {
       closingDate: draft.closingDate || null,
       salary: draft.salary || 'Market Related Salary',
       posted: editingId ? 'Draft update' : 'Draft preview',
-      applicationUrl: null,
+      applicationUrl: draft.applicationUrl.trim() || null,
       summary: draft.summary || 'Role summary preview will appear here once the draft is filled in.',
       responsibilities: draft.responsibilities
         .split('\n')
@@ -218,7 +221,7 @@ export function StaffAccessPage() {
       isUrgent: draft.isUrgent,
       closingDate: draft.closingDate || null,
       salary: draft.salary.trim() || 'Market Related Salary',
-      applicationUrl: null,
+      applicationUrl: draft.applicationUrl.trim() || null,
       summary: draft.summary.trim(),
       responsibilities,
     }
@@ -490,6 +493,24 @@ export function StaffAccessPage() {
                     />
 
                     <label className="staff-access-fields__wide">
+                      Nexora AI application URL (optional)
+                      <input
+                        type="url"
+                        inputMode="url"
+                        autoComplete="url"
+                        placeholder="https://nexora.ai/jobs/…"
+                        value={draft.applicationUrl}
+                        onChange={(event) => setDraft((current) => ({ ...current, applicationUrl: event.target.value }))}
+                        aria-describedby="vacancy-application-url-help"
+                        pattern="https://.*"
+                        title="Enter the full HTTPS URL for this vacancy on Nexora AI."
+                      />
+                      <span className="staff-access-field-help" id="vacancy-application-url-help">
+                        Candidates will use this link to apply to this specific vacancy.
+                      </span>
+                    </label>
+
+                    <label className="staff-access-fields__wide">
                       Role summary
                       <textarea
                         rows={3}
@@ -541,7 +562,7 @@ export function StaffAccessPage() {
                       <div className="staff-access-preview__meta">
                         <span>{previewVacancy.location}</span>
                         <span>{previewVacancy.employmentType}</span>
-                        <span>{previewVacancy.salary}</span>
+                        <span>{formatSalary(previewVacancy.salary)}</span>
                         {previewVacancy.closingDate && <span>Closes {formatDateDmy(previewVacancy.closingDate)}</span>}
                       </div>
                       <p>{previewVacancy.summary}</p>

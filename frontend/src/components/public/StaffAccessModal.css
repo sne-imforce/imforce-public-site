@@ -311,6 +311,11 @@
   font: 400 14px/1.65 var(--font-body);
 }
 
+.staff-access-field-help {
+  color: var(--color-muted);
+  font: 400 12px/1.5 var(--font-body);
+}
+
 .staff-access-form > label,
 .staff-access-fields > label {
   display: grid;
