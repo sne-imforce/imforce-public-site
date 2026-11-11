@@ -40,4 +40,38 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npm audit --audit-level=high
-      - run: node --check server.js
+      - run: node --check server.js && node --check security.js
+      - name: Security regression tests
+        run: npm test
+
+  secrets:
+    name: Secret pattern scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on committed credentials
+        run: |
+          set -euo pipefail
+          patterns='sk_live_[A-Za-z0-9]{16,}|sk_test_[A-Za-z0-9]{20,}|sb_secret_[A-Za-z0-9_-]{20,}|eyJhbGciOi[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|hooks\.slack\.com/services/T[A-Z0-9]+/|AKIA[0-9A-Z]{16}'
+          if git grep -nIE "$patterns" -- ':!*.lock' ':!**/package-lock.json'; then
+            echo "::error::Possible secret committed. Remove it, rotate the credential, and use the host secret manager."
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$'; then
+            echo "::error::An .env file is tracked by git."
+            exit 1
+          fi
+
+  codeql:
+    name: CodeQL static analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3

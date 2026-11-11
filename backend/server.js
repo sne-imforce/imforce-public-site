@@ -3,6 +3,7 @@ const crypto = require('node:crypto')
 const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
+const { createSecurityMonitor } = require('./security')
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -16,6 +17,8 @@ const paystackCallbackUrl = process.env.PAYSTACK_CALLBACK_URL || `${configuredOr
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? configuredOrigins
   : [...new Set([...configuredOrigins, 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'])]
+const securityAlertWebhookUrl = process.env.SECURITY_ALERT_WEBHOOK_URL || ''
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const todayInSouthAfrica = () => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
 app.disable('x-powered-by')
@@ -42,13 +45,58 @@ if (process.env.NODE_ENV === 'production') {
   try {
     if (new URL(supabaseUrl).protocol !== 'https:') throw new Error()
   } catch { throw new Error('Production SUPABASE_URL must be a valid HTTPS URL.') }
+  if (securityAlertWebhookUrl) {
+    try { if (new URL(securityAlertWebhookUrl).protocol !== 'https:') throw new Error() }
+    catch { throw new Error('SECURITY_ALERT_WEBHOOK_URL must be an HTTPS URL.') }
+  }
 }
+
+// Linear-time email check. A backtracking regex on unbounded input let one
+// 30 KB request block the event loop for over a second (ReDoS).
+function isEmail(value) {
+  if (typeof value !== 'string') return false
+  const email = value.trim()
+  if (email.length < 6 || email.length > 254 || /\s/.test(email)) return false
+  const at = email.indexOf('@')
+  if (at < 1 || at !== email.lastIndexOf('@') || at > 64) return false
+  const domain = email.slice(at + 1)
+  const dot = domain.lastIndexOf('.')
+  return dot > 0 && dot < domain.length - 2 && !domain.includes('..')
+}
+
+const security = createSecurityMonitor({
+  alertWebhookUrl: securityAlertWebhookUrl,
+  allowlist: (process.env.SECURITY_ALLOWLIST_IPS || '').split(',').map((value) => value.trim()),
+  blockPrivateAddresses: process.env.SECURITY_BLOCK_PRIVATE_IPS === 'true',
+  persistEvent: async (event) => {
+    if (!supabaseUrl || !serviceKey) return
+    await supabase('/rest/v1/security_events', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      body: {
+        occurred_at: event.at, event_type: event.type, severity: event.severity, action: event.action,
+        ip_address: event.ip, method: event.method, path: event.path, user_agent: event.userAgent,
+        detail: event.detail, threat_score: event.threatScore,
+      },
+    })
+  },
+})
+
 app.use(helmet())
 app.use(cors({ origin: allowedOrigins }))
+app.use(security.guard)
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json')) {
+    return res.status(415).json({ error: 'Send the request as JSON.' })
+  }
+  next()
+})
 app.use(express.json({
   limit: '32kb',
   verify: (req, _res, buffer) => { req.rawBody = Buffer.from(buffer) },
 }))
+app.use(security.tripwire)
+app.use('/api/staff', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
 
 const rateBuckets = new Map()
 const rateWindowMs = 60_000
@@ -68,6 +116,8 @@ app.use('/api', (req, res, next) => {
   let bucket = rateBuckets.get(key)
   if (!bucket || bucket.resetAt <= now) bucket = { count: 0, resetAt: now + rateWindowMs }
   if (bucket.count >= rateLimits[group]) {
+    if (bucket.count === rateLimits[group]) security.record(req, `rate-limit:${group}`, group === 'login' ? 'medium' : 'low', 'Request limit exceeded')
+    bucket.count += 1
     res.set('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)))
     return res.status(429).json({ error: 'Too many requests. Try again shortly.' })
   }
@@ -176,12 +226,21 @@ async function requireStaff(req, res, next) {
   try {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
     if (!token) return res.status(401).json({ error: 'Sign in to continue.' })
+    if (token.length > 4096 || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(token)) {
+      security.record(req, 'malformed-staff-token', 'medium', 'Staff route called with a malformed token')
+      return res.status(401).json({ error: 'Your session is invalid or expired. Sign in again.' })
+    }
     const user = await supabase('/auth/v1/user', { key: anonKey, token })
     const profiles = await supabase(`/rest/v1/staff_profiles?user_id=eq.${encodeURIComponent(user.id)}&active=eq.true&select=user_id`)
-    if (!profiles.length) return res.status(403).json({ error: 'This account is not authorized for staff access.' })
+    if (!profiles.length) {
+      security.record(req, 'non-staff-token', 'high', 'Valid account without an active staff profile called a staff route')
+      return res.status(403).json({ error: 'This account is not authorized for staff access.' })
+    }
     req.staffUser = user
+    req.staffToken = token
     next()
   } catch {
+    security.record(req, 'invalid-staff-token', 'low', 'Staff route called with an invalid or expired token')
     res.status(401).json({ error: 'Your session is invalid or expired. Sign in again.' })
   }
 }
@@ -191,7 +250,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
 app.get('/api/vacancies', async (_req, res) => {
   if (!requireConfig(res)) return
   try {
-    const rows = await supabase('/rest/v1/vacancies?status=eq.published&select=*&order=created_at.desc', { key: anonKey })
+    const rows = await supabase('/rest/v1/vacancies?status=eq.published&select=id,title,location,region,industry,category,employment_type,is_urgent,closing_date,salary,application_url,summary,responsibilities,created_at&order=created_at.desc', { key: anonKey })
     const today = todayInSouthAfrica()
     res.json({ vacancies: rows.filter((row) => !row.closing_date || row.closing_date >= today).map((row) => {
       const vacancy = toVacancy(row)
@@ -203,9 +262,13 @@ app.get('/api/vacancies', async (_req, res) => {
 
 app.post('/api/contact', async (req, res) => {
   if (!requireConfig(res)) return
-  const { name, email, phone = '', enquiryType, subject, message, website = '' } = req.body || {}
-  if (website) return res.json({ ok: true })
-  if (![name, email, enquiryType, subject, message].every((value) => typeof value === 'string' && value.trim()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !['Hiring and permanent staffing', 'Job opportunities', 'Other enquiry'].includes(enquiryType) || name.length > 120 || email.length > 254 || subject.length > 160 || message.length > 5000 || typeof phone !== 'string' || phone.length > 40) {
+  const { name, email, phone = '', enquiryType, subject, message, website = '', extraNotesHp = '' } = req.body || {}
+  if (website || extraNotesHp) {
+    // Hidden honeypot field: humans never see it, form-filling bots do.
+    security.record(req, 'bot-honeypot-field', 'medium', 'Hidden contact form field was filled')
+    return res.json({ ok: true })
+  }
+  if (![name, email, enquiryType, subject, message].every((value) => typeof value === 'string' && value.trim()) || typeof phone !== 'string' || name.length > 120 || email.length > 254 || subject.length > 160 || message.length > 5000 || phone.length > 40 || !isEmail(email) || !['Hiring and permanent staffing', 'Job opportunities', 'Other enquiry'].includes(enquiryType)) {
     return res.status(400).json({ error: 'Check the required fields and try again.' })
   }
   try {
@@ -252,7 +315,7 @@ function validateEmployerOrder(details) {
       errors.push({ field, message: `${employerFieldLabels[field]} must be text no longer than 5,000 characters.` })
     }
   }
-  if (typeof details.email === 'string' && details.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email.trim())) {
+  if (typeof details.email === 'string' && details.email.trim() && !isEmail(details.email)) {
     errors.push({ field: 'email', message: 'Enter a valid email address, for example name@company.co.za.' })
   }
   if (typeof details.phone === 'string' && details.phone.trim() && (details.phone.replace(/\D/g, '').length < 7 || details.phone.replace(/\D/g, '').length > 15)) {
@@ -346,6 +409,15 @@ app.post('/api/payments/paystack/initialize', async (req, res) => {
   if (!requireConfig(res)) return
   if (!paystackSecretKey) return res.status(503).json({ error: 'Secure checkout is not configured yet. Please contact IMFORCE.' })
   const details = req.body?.details
+  if (details && typeof details === 'object') {
+    for (const trapField of ['extraNotesHp', 'website']) {
+      if (typeof details[trapField] === 'string' && details[trapField]) {
+        security.record(req, 'bot-honeypot-field', 'medium', 'Hidden job order form field was filled')
+        return res.status(400).json({ error: 'The job order could not be accepted. Please contact IMFORCE.' })
+      }
+      if (details[trapField] === '') delete details[trapField]
+    }
+  }
   const validation = validateEmployerOrder(details)
   if (validation) return res.status(400).json(validation)
 
@@ -421,7 +493,10 @@ app.post('/api/payments/paystack/verify', async (req, res) => {
   }
   try {
     const result = await confirmPaystackPayment(reference)
-    if (!result.found) return res.status(404).json({ error: 'No job order was found for this payment reference. Contact IMFORCE before trying to pay again.' })
+    if (!result.found) {
+      security.record(req, 'unknown-payment-reference', 'low', 'Payment verification for an unknown reference')
+      return res.status(404).json({ error: 'No job order was found for this payment reference. Contact IMFORCE before trying to pay again.' })
+    }
     if (!result.paid) return res.status(402).json({ error: 'Paystack has not confirmed the ZAR 499 payment. If your bank shows a debit, contact IMFORCE before trying again.' })
     return res.json({ paid: true, message: 'Payment received. Your job order was sent to IMFORCE for the next step.' })
   } catch {
@@ -454,7 +529,10 @@ function isValidPaystackWebhook(req) {
 }
 
 app.post('/api/payments/paystack/webhook', async (req, res) => {
-  if (!isValidPaystackWebhook(req)) return res.sendStatus(401)
+  if (!isValidPaystackWebhook(req)) {
+    security.record(req, 'forged-payment-webhook', 'high', 'Payment webhook with a missing or invalid signature')
+    return res.sendStatus(401)
+  }
   if (req.body?.event !== 'charge.success') return res.sendStatus(200)
   const reference = req.body?.data?.reference
   if (typeof reference !== 'string' || !/^IMF-[0-9a-f-]{36}$/i.test(reference)) return res.sendStatus(200)
@@ -466,16 +544,71 @@ app.post('/api/payments/paystack/webhook', async (req, res) => {
   }
 })
 
+// Per-account lockout complements the per-IP limiter, so password guessing
+// spread across many IP addresses (credential stuffing) is still stopped.
+const loginFailures = new Map()
+const loginFailureLimit = 5
+const loginLockMs = 15 * 60 * 1000
+const loginFailureMessage = 'Email or password is incorrect, or the account is temporarily locked. Try again later or contact your IMFORCE administrator.'
+
+function accountLocked(email) {
+  const entry = loginFailures.get(email)
+  if (!entry) return false
+  if (entry.resetAt <= Date.now()) { loginFailures.delete(email); return false }
+  return entry.count >= loginFailureLimit
+}
+
+function recordLoginFailure(req, email) {
+  const now = Date.now()
+  let entry = loginFailures.get(email)
+  if (!entry || entry.resetAt <= now) entry = { count: 0, resetAt: now + loginLockMs }
+  entry.count += 1
+  if (loginFailures.size >= 20_000 && !loginFailures.has(email)) loginFailures.delete(loginFailures.keys().next().value)
+  loginFailures.set(email, entry)
+  security.record(req, 'staff-login-failed', 'low', `Failed staff sign-in attempt ${entry.count} for an account`)
+  if (entry.count === loginFailureLimit) security.record(req, 'staff-account-locked', 'high', 'Staff account locked after repeated failed sign-ins')
+}
+
 app.post('/api/staff/login', async (req, res) => {
   if (!requireConfig(res)) return
   const { email, password } = req.body || {}
-  if (typeof email !== 'string' || typeof password !== 'string' || email.length > 254 || password.length > 256) return res.status(400).json({ error: 'Enter your staff email and password.' })
+  if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password || email.length > 254 || password.length > 256) return res.status(400).json({ error: 'Enter your staff email and password.' })
+  const normalizedEmail = email.trim().toLowerCase()
+  if (accountLocked(normalizedEmail)) {
+    security.record(req, 'locked-account-attempt', 'medium', 'Sign-in attempted on a locked staff account')
+    return res.status(401).json({ error: loginFailureMessage })
+  }
+  let session
   try {
-    const session = await supabase('/auth/v1/token?grant_type=password', { key: anonKey, method: 'POST', body: { email: email.trim().toLowerCase(), password } })
+    session = await supabase('/auth/v1/token?grant_type=password', { key: anonKey, method: 'POST', body: { email: normalizedEmail, password } })
+  } catch (error) {
+    if (error.status >= 500 || error.status === 429 || error.name === 'TimeoutError') return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' })
+    recordLoginFailure(req, normalizedEmail)
+    return res.status(401).json({ error: loginFailureMessage })
+  }
+  try {
     const profiles = await supabase(`/rest/v1/staff_profiles?user_id=eq.${encodeURIComponent(session.user.id)}&active=eq.true&select=user_id`)
-    if (!profiles.length) return res.status(403).json({ error: 'This account is not authorized for staff access.' })
-    res.json({ accessToken: session.access_token, email: session.user.email })
-  } catch { res.status(401).json({ error: 'Email or password is incorrect.' }) }
+    if (!profiles.length) {
+      // Same response as a wrong password so outsiders cannot discover which
+      // emails have site accounts; revoke the session that was just issued.
+      await revokeSession(session.access_token)
+      security.record(req, 'non-staff-login', 'high', 'Valid non-staff account tried to sign in to the staff portal')
+      recordLoginFailure(req, normalizedEmail)
+      return res.status(401).json({ error: loginFailureMessage })
+    }
+    loginFailures.delete(normalizedEmail)
+    res.json({ accessToken: session.access_token, email: session.user.email, expiresIn: Number(session.expires_in) || 3600 })
+  } catch { res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' }) }
+})
+
+async function revokeSession(token) {
+  try { await supabase('/auth/v1/logout?scope=local', { key: anonKey, token, method: 'POST' }) }
+  catch { /* The token still expires on its own; sign-out is best effort. */ }
+}
+
+app.post('/api/staff/logout', requireStaff, async (req, res) => {
+  await revokeSession(req.staffToken)
+  res.json({ ok: true })
 })
 
 app.get('/api/staff/me', requireStaff, (req, res) => res.json({ email: req.staffUser.email }))
@@ -488,7 +621,7 @@ app.get('/api/staff/vacancies', requireStaff, async (_req, res) => {
 app.get('/api/staff/inquiries', requireStaff, async (_req, res) => {
   try {
     const [contacts, employers] = await Promise.all([
-      supabase('/rest/v1/contact_inquiries?select=id,email,subject,message,created_at&order=created_at.desc&limit=100'),
+      supabase('/rest/v1/contact_inquiries?select=id,name,email,phone,enquiry_type,subject,message,created_at&order=created_at.desc&limit=100'),
       supabase('/rest/v1/employer_inquiries?select=id,details,created_at&order=created_at.desc&limit=100'),
     ])
     const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer' }))]
@@ -503,22 +636,39 @@ app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
     res.status(201).json({ vacancy: toVacancy(row) })
   } catch (error) { res.status(error.status === 400 ? 400 : 502).json({ error: error.status === 400 ? error.message : 'Vacancy could not be saved.' }) }
 })
-app.put('/api/staff/vacancies/:id', requireStaff, async (req, res) => {
+function requireVacancyId(req, res, next) {
+  if (!uuidPattern.test(req.params.id)) {
+    security.record(req, 'invalid-record-id', 'medium', 'Staff vacancy route called with a non-UUID id')
+    return res.status(404).json({ error: 'Vacancy not found.' })
+  }
+  next()
+}
+
+app.put('/api/staff/vacancies/:id', requireStaff, requireVacancyId, async (req, res) => {
   try {
     const rows = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}`, { method: 'PATCH', body: fromVacancy(req.body), prefer: 'return=representation' })
     if (!rows.length) return res.status(404).json({ error: 'Vacancy not found.' })
     res.json({ vacancy: toVacancy(rows[0]) })
   } catch (error) { res.status(error.status === 400 ? 400 : 502).json({ error: error.status === 400 ? error.message : 'Vacancy could not be updated.' }) }
 })
-app.delete('/api/staff/vacancies/:id', requireStaff, async (req, res) => {
+app.delete('/api/staff/vacancies/:id', requireStaff, requireVacancyId, async (req, res) => {
   try {
-    await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}`, { method: 'DELETE', prefer: 'return=minimal' })
+    const rows = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}&select=id`, { method: 'DELETE', prefer: 'return=representation' })
+    if (!rows?.length) return res.status(404).json({ error: 'Vacancy not found.' })
     res.json({ ok: true })
   } catch { res.status(502).json({ error: 'Vacancy could not be deleted.' }) }
 })
 
+app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }))
+app.use((_req, res) => res.status(404).json({ error: 'Not found.' }))
+
 app.use((error, _req, res, _next) => {
-  if (error instanceof SyntaxError) return res.status(400).json({ error: 'Request body must be valid JSON.' })
+  if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'The request is too large.' })
+  if (error instanceof SyntaxError || error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Request body must be valid JSON.' })
+  console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), message: String(error?.message ?? error).slice(0, 300) }))
   res.status(500).json({ error: 'Unexpected server error.' })
 })
-app.listen(port, () => console.log(`IMFORCE API listening on ${port}`))
+
+if (require.main === module) app.listen(port, () => console.log(`IMFORCE API listening on ${port}`))
+
+module.exports = { app, security, isEmail, validateEmployerOrder, fromVacancy }
