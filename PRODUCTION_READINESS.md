@@ -13,6 +13,10 @@ This repository contains the public React site and a small Express API. Paystack
 - A GitHub Actions workflow now runs locked installs, high-severity npm dependency audits, frontend lint/build, and backend syntax validation on pushes and pull requests.
 - Production API startup now fails closed when the frontend origin or required Supabase credentials are missing or insecure.
 
+## QA and secure-SDLC review (November 2026)
+
+See [docs/QA_SECURITY_REVIEW.md](./docs/QA_SECURITY_REVIEW.md) for the full findings, evidence and go-live checklist. In summary: a ReDoS in email validation, the exposure of client names to the anon key, the public scope document, and missing per-account brute-force protection were fixed. Session revocation, idle timeout, a production CSP and security headers, restored database migrations (plus `004_security_hardening.sql`), an intrusion-detection alarm system, 33 API security tests, a secret scan and CodeQL in CI were added. New release blockers from that review: a privacy policy (POPIA), staff MFA, running migration 004, and alert webhook configuration.
+
 ## Release blockers from the approved scope
 
 These require IMFORCE decisions, credentials, infrastructure, or the connected systems and are not safely implementable from this repository alone:
