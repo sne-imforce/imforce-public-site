@@ -3,7 +3,6 @@ import {
   FiArrowRight,
   FiBriefcase,
   FiCalendar,
-  FiDollarSign,
   FiMapPin,
   FiSearch,
 } from 'react-icons/fi'
@@ -33,6 +32,16 @@ const defaultFilters: Filters = {
   category: 'all',
   location: 'all',
   employmentType: 'all',
+}
+
+function SalaryMeta({ value }: { value: string }) {
+  const salary = formatSalary(value)
+  return (
+    <span>
+      {!/\bZAR\b/i.test(salary) && <strong className="careers-currency-label">ZAR</strong>}
+      {salary}
+    </span>
+  )
 }
 
 function loadSavedFilters(vacancies: Vacancy[]): Filters {
@@ -378,12 +387,7 @@ function Careers() {
                           <FiBriefcase aria-hidden="true" />
                           {vacancy.employmentType}
                         </span>
-                        {vacancy.salary && (
-                          <span>
-                            <FiDollarSign aria-hidden="true" />
-                            {formatSalary(vacancy.salary)}
-                          </span>
-                        )}
+                        {vacancy.salary && <SalaryMeta value={vacancy.salary} />}
                       </div>
 
                       <p className="careers-job-card__summary">{vacancy.summary}</p>
@@ -423,12 +427,7 @@ function Careers() {
                           <FiBriefcase aria-hidden="true" />
                           {selectedVacancy.employmentType}
                         </span>
-                        {selectedVacancy.salary && (
-                          <span>
-                            <FiDollarSign aria-hidden="true" />
-                            {formatSalary(selectedVacancy.salary)}
-                          </span>
-                        )}
+                        {selectedVacancy.salary && <SalaryMeta value={selectedVacancy.salary} />}
                         <span>
                           <FiCalendar aria-hidden="true" />
                           {formatDateDmy(selectedVacancy.posted)}

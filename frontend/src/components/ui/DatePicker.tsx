@@ -19,9 +19,16 @@ const iso = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-$
 const todayIso = () => iso(new Date())
 
 function parseDate(value: string): string | null {
-  const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (!match) return null
-  const day = Number(match[1]); const month = Number(match[2]); const year = Number(match[3])
+  const text = value.trim()
+  const slashDate = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  const namedDate = text.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/)
+  if (!slashDate && !namedDate) return null
+  const day = Number((slashDate ?? namedDate)![1])
+  const year = Number((slashDate ?? namedDate)![3])
+  const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+  const month = slashDate
+    ? Number(slashDate[2])
+    : monthNames.indexOf(namedDate![2].toLowerCase()) + 1
   const date = new Date(year, month - 1, day)
   if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
   return `${year}-${pad(month)}-${pad(day)}`
@@ -48,7 +55,7 @@ export default function DatePicker({ value, onChange, label, id, name, required 
   const invalid = valueIsPast || typedIsPast || (touched && required && !text) || (touched && Boolean(text) && !parsed)
   const errorText = valueIsPast || typedIsPast
     ? 'Choose a date that is today or later.'
-    : required && !text ? 'Choose a date.' : 'Enter a valid date as dd/mm/yyyy.'
+    : required && !text ? 'Choose a date.' : 'Enter a valid date as dd Mon yyyy.'
   const offset = (month.getDay() + 6) % 7
   const dayCount = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
   const cells = useMemo(() => [
@@ -111,9 +118,9 @@ export default function DatePicker({ value, onChange, label, id, name, required 
           type="text"
           value={text}
           required={required}
-          inputMode="numeric"
+          inputMode="text"
           autoComplete="off"
-          placeholder="dd/mm/yyyy"
+          placeholder="dd Mon yyyy"
           aria-labelledby={`${id}-label`}
           aria-invalid={invalid}
           aria-describedby={invalid ? `${id}-error` : undefined}

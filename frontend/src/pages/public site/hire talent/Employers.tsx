@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { FiCheckCircle } from 'react-icons/fi'
 import { Link, useSearchParams } from 'react-router-dom'
 import DatePicker from '../../../components/ui/DatePicker'
-import { submitEmployerInquiry } from '../../../data/api'
+import { initializePaystackCheckout, verifyPaystackPayment } from '../../../data/api'
 import { formatDateDmy } from '../../../utils/dates'
 import Navbar from '../../../components/public/Navbar'
 import './Employers.css'
@@ -87,8 +88,7 @@ function isDraftControl(
     (control instanceof HTMLInputElement ||
       control instanceof HTMLSelectElement ||
       control instanceof HTMLTextAreaElement) &&
-    Boolean(control.name) &&
-    !(control instanceof HTMLInputElement && control.type === 'file')
+    Boolean(control.name)
   )
 }
 
@@ -170,36 +170,84 @@ function readStoredDraft(): { draft: StoredDraft | null; status: string } {
   return {
     draft: parsedDraft,
     status:
-      'Your saved answers were restored. Selected files must be added again.',
+      'Your saved answers were restored in this browser tab.',
   }
 }
 
 function Employers() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const jobTitlePrefill = searchParams.get('jobTitle')?.trim() ?? ''
   const monthlySalaryPrefill = searchParams.get('monthlySalary')?.trim() ?? ''
   const numberOfHiresPrefill = searchParams.get('numberOfHires')?.trim() ?? ''
   const hasPrefill = Boolean(
     jobTitlePrefill || monthlySalaryPrefill || numberOfHiresPrefill,
   )
-  const [jobDescriptionName, setJobDescriptionName] = useState('')
+  const [jobOrderIssues, setJobOrderIssues] = useState<Array<{ field: string; label: string; message: string }>>([])
   const [review, setReview] = useState<JobOrderReview | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submissionStatus, setSubmissionStatus] = useState('')
+  const [checkoutFallbackUrl, setCheckoutFallbackUrl] = useState('')
+  const [paymentNotice, setPaymentNotice] = useState('')
+  const [paymentToastMessage, setPaymentToastMessage] = useState('')
+  const [paymentToastMounted, setPaymentToastMounted] = useState(false)
+  const [paymentToastVisible, setPaymentToastVisible] = useState(false)
+  const paymentReference = searchParams.get('reference') ?? searchParams.get('trxref')
   const [initialDraft] = useState(readStoredDraft)
   const [closingDate, setClosingDate] = useState(
     typeof initialDraft.draft?.closingDate === 'string' ? initialDraft.draft.closingDate : '',
   )
+  const [isMarketRelatedSalary, setIsMarketRelatedSalary] = useState(initialDraft.draft?.salaryType === 'market')
   const [hasSavedDraft, setHasSavedDraft] = useState(
     initialDraft.draft !== null || hasPrefill,
   )
   const [draftStatus, setDraftStatus] = useState(
     hasPrefill
-      ? 'The position title, salary and number of hires were filled from the fee calculator. Selected files are not saved.'
+      ? 'The position title, salary and number of hires were filled from the fee calculator.'
       : initialDraft.status,
   )
   const dialogRef = useRef<HTMLDialogElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    if (!paymentToastMounted) return
+    if (paymentToastVisible) {
+      const hideTimer = window.setTimeout(() => setPaymentToastVisible(false), 3000)
+      return () => window.clearTimeout(hideTimer)
+    }
+    const removeTimer = window.setTimeout(() => setPaymentToastMounted(false), 350)
+    return () => window.clearTimeout(removeTimer)
+  }, [paymentToastMounted, paymentToastVisible])
+
+  useEffect(() => {
+    if (!paymentReference) return
+    let active = true
+    void verifyPaystackPayment(paymentReference)
+      .then(({ message }) => {
+        if (!active) return
+        setPaymentToastMessage(`${message} Paystack will email a copy of your proof of payment to your contact email.`)
+        setPaymentToastMounted(true)
+        window.requestAnimationFrame(() => setPaymentToastVisible(true))
+        try { sessionStorage.removeItem(draftStorageKey) } catch { /* Payment is confirmed; draft cleanup is best effort. */ }
+        formRef.current?.reset()
+        setClosingDate('')
+        setIsMarketRelatedSalary(false)
+        setHasSavedDraft(false)
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        const reason = error instanceof Error ? error.message : 'Payment could not be confirmed yet.'
+        setPaymentNotice(`${reason} If your bank shows a debit, contact IMFORCE before trying to pay again.`)
+      })
+      .finally(() => {
+        if (active) setSearchParams((current) => {
+          current.delete('reference')
+          current.delete('trxref')
+          current.delete('status')
+          return current
+        }, { replace: true })
+      })
+    return () => { active = false }
+  }, [paymentReference, setSearchParams])
   const handleClosingDateChange = (value: string) => {
     setClosingDate(value)
     const form = formRef.current
@@ -209,7 +257,7 @@ function Employers() {
     try {
       sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
       setHasSavedDraft(true)
-      setDraftStatus('Your answers are saved in this browser tab. Selected files are not saved.')
+      setDraftStatus('Your answers are saved in this browser tab.')
     } catch {
       setDraftStatus('This browser could not save your draft. Keep this page open or copy your answers before refreshing.')
     }
@@ -226,6 +274,15 @@ function Employers() {
         if (value === undefined) continue
         applyControlValue(control, value)
       }
+    }
+
+    const salaryTypeControl = form.elements.namedItem('salaryType')
+    const salaryControl = form.elements.namedItem('salary')
+    if (salaryTypeControl instanceof HTMLSelectElement && salaryControl instanceof HTMLInputElement) {
+      const marketRelated = salaryTypeControl.value === 'market'
+      setIsMarketRelatedSalary(marketRelated)
+      salaryControl.readOnly = marketRelated
+      if (marketRelated) salaryControl.value = 'Market Related Salary'
     }
 
     const prefill: Array<[string, string]> = []
@@ -312,6 +369,12 @@ function Employers() {
   return (
     <>
       <Navbar />
+      {paymentToastMounted && (
+        <div className={`employers-payment-toast${paymentToastVisible ? ' is-visible' : ''}`} role="status" aria-live="polite" aria-atomic="true">
+          <FiCheckCircle aria-hidden="true" />
+          <span>{paymentToastMessage}</span>
+        </div>
+      )}
       <main className="employers-page">
         <section className="employers-hero" aria-labelledby="employers-title">
           <div className="employers-shell employers-hero__inner">
@@ -422,9 +485,24 @@ function Employers() {
           <aside className="employers-form-notice">
             Your answers are saved in this browser tab while you complete the
             form. They are sent to IMFORCE only when you confirm the job order.
-            The selected job-description file is not uploaded. Clear your
-            saved draft when finished.
+            Clear your saved draft when finished.
           </aside>
+          {(paymentNotice || (paymentReference ? 'Checking your Paystack payment…' : '')) && (
+            <p className="employers-payment-notice" role="status" aria-live="polite">
+              {paymentNotice || 'Checking your Paystack payment…'}
+            </p>
+          )}
+          {jobOrderIssues.length > 0 && (
+            <div className="employers-form-errors" role="alert" aria-labelledby="employers-form-errors-title">
+              <h3 id="employers-form-errors-title">Please improve these job details</h3>
+              <ul>
+                {jobOrderIssues.map((issue) => (
+                  <li key={issue.field}><a href={`#${issue.field}`}>{issue.label}: {issue.message}</a></li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {hasSavedDraft && (
             <div className="employers-form__draft-controls">
               <p className="employers-form__draft-status" role="status" aria-live="polite">
@@ -442,8 +520,9 @@ function Employers() {
                   }
                   formRef.current?.reset()
                   setClosingDate('')
-                  setJobDescriptionName('')
+                  setIsMarketRelatedSalary(false)
                   setReview(null)
+                  setJobOrderIssues([])
                   setSubmissionStatus('')
                   setHasSavedDraft(false)
                 }}
@@ -459,6 +538,21 @@ function Employers() {
             onSubmit={(event) => {
               event.preventDefault()
               const formData = new FormData(event.currentTarget)
+              const values = Object.fromEntries(formData.entries())
+              const descriptionChecks = [
+                { field: 'duties', label: 'Main duties', minimum: 40, message: 'Add more detail about the day-to-day responsibilities (at least 40 characters).' },
+                { field: 'requirements', label: 'Skills and requirements', minimum: 25, message: 'Describe the skills or experience a suitable candidate needs (at least 25 characters).' },
+                { field: 'qualifications', label: 'Qualifications and experience', minimum: 20, message: 'Add the required qualifications or relevant experience (at least 20 characters).' },
+              ]
+              const issues = descriptionChecks
+                .filter(({ field, minimum }) => String(values[field] ?? '').trim().length < minimum)
+                .map(({ field, label, message }) => ({ field, label, message }))
+              setJobOrderIssues(issues)
+              if (issues.length) {
+                document.getElementById(issues[0].field)?.focus()
+                return
+              }
+
               const readFields = (
                 fields: ReadonlyArray<readonly [string, string]>,
               ) =>
@@ -484,13 +578,14 @@ function Employers() {
               })
             }}
             onChange={(event) => {
+              setJobOrderIssues([])
               const draft = readFormDraft(event.currentTarget)
 
               try {
                 sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
                 setHasSavedDraft(true)
                 setDraftStatus(
-                  'Your answers are saved in this browser tab. Selected files are not saved.',
+                  'Your answers are saved in this browser tab.',
                 )
               } catch {
                 setDraftStatus(
@@ -601,13 +696,12 @@ function Employers() {
                     defaultValue="specified"
                     required
                     onChange={(event) => {
-                      const salaryField =
-                        event.currentTarget.form?.elements.namedItem('salary')
+                      const salaryField = event.currentTarget.form?.elements.namedItem('salary')
                       if (!(salaryField instanceof HTMLInputElement)) return
-                      salaryField.value =
-                        event.currentTarget.value === 'market'
-                          ? 'Market Related Salary'
-                          : ''
+                      const marketRelated = event.currentTarget.value === 'market'
+                      setIsMarketRelatedSalary(marketRelated)
+                      salaryField.readOnly = marketRelated
+                      salaryField.value = marketRelated ? 'Market Related Salary' : ''
                     }}
                   >
                     <option value="specified">Enter salary / range</option>
@@ -619,6 +713,7 @@ function Employers() {
                   <input
                     name="salary"
                     placeholder="For example, ZAR 20,000 to ZAR 25,000 per month"
+                    readOnly={isMarketRelatedSalary}
                     required
                   />
                 </label>
@@ -633,32 +728,15 @@ function Employers() {
                 />
                 <label className="employers-form__field employers-form__field--full">
                   Main duties *
-                  <textarea name="duties" rows={4} required />
+                  <textarea id="duties" name="duties" rows={4} required />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Skills and requirements *
-                  <textarea name="requirements" rows={4} required />
+                  <textarea id="requirements" name="requirements" rows={4} required />
                 </label>
                 <label className="employers-form__field employers-form__field--full">
                   Qualifications and experience *
-                  <textarea name="qualifications" rows={3} required />
-                </label>
-                <label className="employers-form__field employers-form__field--full">
-                  Job description file (Word or PDF)
-                  <input
-                    className="employers-form__upload"
-                    name="jobDescription"
-                    type="file"
-                    accept=".doc,.docx,.pdf"
-                    onChange={(event) => {
-                      setJobDescriptionName(event.target.files?.[0]?.name ?? '')
-                    }}
-                  />
-                  <small>
-                    {jobDescriptionName
-                      ? `${jobDescriptionName} selected. It will not be uploaded.`
-                      : 'Optional. Files are not uploaded.'}
-                  </small>
+                  <textarea id="qualifications" name="qualifications" rows={3} required />
                 </label>
               </div>
             </fieldset>
@@ -741,10 +819,6 @@ function Employers() {
                   <dd>{value}</dd>
                 </div>
               ))}
-              <div>
-                <dt>Job description file</dt>
-                <dd>{jobDescriptionName || 'Not provided'}</dd>
-              </div>
             </dl>
           </section>
 
@@ -772,27 +846,53 @@ function Employers() {
               >
                 Back to edit
               </button>
+              {checkoutFallbackUrl && (
+                <a className="employers-button employers-button--secondary" href={checkoutFallbackUrl} target="_blank" rel="noopener noreferrer">
+                  Continue to Paystack checkout
+                </a>
+              )}
               <button
                 className="employers-button employers-button--primary"
                 type="button"
-                disabled={submitting || submissionStatus.startsWith('Your job order enquiry has been sent.')}
+                disabled={submitting || Boolean(checkoutFallbackUrl)}
                 onClick={async () => {
                   const form = formRef.current
                   if (!form) return
+                  const checkoutWindow = window.open('about:blank', '_blank')
+                  if (!checkoutWindow) {
+                    setSubmissionStatus('Your browser blocked the Paystack tab. Allow pop-ups for this site, then try checkout again.')
+                    return
+                  }
+                  setCheckoutFallbackUrl('')
+                  checkoutWindow.opener = null
+                  checkoutWindow.document.title = 'Secure Paystack checkout'
+                  const checkoutMessage = checkoutWindow.document.createElement('p')
+                  checkoutMessage.textContent = 'Connecting securely to Paystack…'
+                  checkoutMessage.style.cssText = 'margin:15vh auto;max-width:32rem;padding:2rem;color:#123;font:600 1.1rem/1.6 system-ui,sans-serif;text-align:center'
+                  checkoutWindow.document.body.replaceChildren(checkoutMessage)
                   setSubmitting(true); setSubmissionStatus('')
                   const values = Object.fromEntries(new FormData(form).entries())
-                  const details = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'jobDescription').map(([key, value]) => [key, key === 'authorizedContact' ? value === 'on' : String(value)]))
+                  const details = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'salaryType').map(([key, value]) => [key, key === 'authorizedContact' ? value === 'on' : String(value)]))
                   try {
-                    await submitEmployerInquiry({ details })
-                    setSubmissionStatus('Your job order enquiry has been sent. IMFORCE will contact you about next steps.')
-                    sessionStorage.removeItem(draftStorageKey)
-                    form.reset(); setClosingDate(''); setJobDescriptionName(''); setHasSavedDraft(false)
+                    const { authorizationUrl } = await initializePaystackCheckout(details)
+                    const checkoutUrl = new URL(authorizationUrl)
+                    if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.paystack.com') {
+                      throw new Error('Paystack returned an invalid checkout address. Please contact IMFORCE.')
+                    }
+                    if (checkoutWindow.closed) {
+                      setCheckoutFallbackUrl(checkoutUrl.toString())
+                      setSubmissionStatus('The checkout tab closed before it opened. Continue using the secure checkout link below.')
+                      return
+                    }
+                    checkoutWindow.location.replace(checkoutUrl.toString())
+                    setSubmissionStatus('Paystack checkout opened in a new tab. Keep this tab open while you complete payment.')
                   } catch (error) {
-                    setSubmissionStatus(error instanceof Error ? error.message : 'Your enquiry could not be sent. Please try again.')
+                    if (!checkoutWindow.closed) checkoutWindow.close()
+                    setSubmissionStatus(error instanceof Error ? error.message : 'Paystack checkout could not be started. Please try again.')
                   } finally { setSubmitting(false) }
                 }}
               >
-                {submitting ? 'Sending…' : submissionStatus.startsWith('Your job order enquiry has been sent.') ? 'Enquiry sent' : 'Submit job order enquiry'}
+                {submitting ? 'Opening Paystack…' : 'Checkout with Paystack'}
               </button>
             </div>
           </div>

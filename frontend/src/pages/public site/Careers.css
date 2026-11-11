@@ -248,6 +248,8 @@
   font: 500 12px/1.5 var(--font-interface);
 }
 
+.careers-currency-label { color: var(--color-primary); font-weight: 700; }
+
 .careers-job-card__location {
   font-size: 11px;
   letter-spacing: 0.02em;

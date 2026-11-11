@@ -229,6 +229,61 @@
   font: 400 14px/1.7 var(--font-body);
 }
 
+.employers-payment-notice {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border-radius: 9px;
+  background: #eaf5f1;
+  color: #16573f;
+  font: 600 14px/1.55 var(--font-interface);
+}
+
+.employers-payment-toast {
+  position: fixed;
+  z-index: 1000;
+  top: 22px;
+  right: 22px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 17px 19px;
+  border: 1px solid #b8dfca;
+  border-radius: 14px;
+  background: #f1fbf5;
+  color: #174c34;
+  box-shadow: 0 14px 38px rgb(16 52 34 / 20%);
+  font: 600 14px/1.55 var(--font-interface);
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 300ms ease-in-out, transform 300ms ease-in-out;
+}
+
+.employers-payment-toast svg { flex: 0 0 auto; margin-top: 1px; color: #218354; font-size: 20px; }
+.employers-payment-toast.is-visible { opacity: 1; transform: translateY(0); }
+
+@media (max-width: 560px) {
+  .employers-payment-toast { top: 12px; right: 12px; width: calc(100vw - 24px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .employers-payment-toast { transition: none; }
+}
+
+.employers-form-errors {
+  margin: 22px 0;
+  padding: 16px 20px;
+  border: 1px solid #c94747;
+  border-radius: 10px;
+  background: #fff6f5;
+  color: #6e2525;
+}
+
+.employers-form-errors h3 { margin: 0 0 8px; color: #6e2525; font: 700 15px/1.4 var(--font-interface); }
+.employers-form-errors ul { display: grid; gap: 5px; margin: 0; padding-left: 20px; }
+.employers-form-errors a { color: inherit; line-height: 1.5; }
+.employers-form-errors a:focus-visible { outline: 3px solid #a83030; outline-offset: 2px; }
+
 .employers-form-notice strong {
   color: var(--color-primary);
 }
@@ -333,16 +388,11 @@
   outline: 3px solid rgb(47 127 201 / 22%);
 }
 
+.employers-form__field input[readonly] { background: #edf1f5; color: #4f5d6b; cursor: not-allowed; }
+
 .employers-form__field small {
   color: var(--color-muted);
   font: 400 12px/1.5 var(--font-body);
-}
-
-.employers-form__upload {
-  padding: 14px;
-  border: 1px dashed #9bb9d8;
-  border-radius: 9px;
-  background: #f8fafd;
 }
 
 .employers-form__terms {

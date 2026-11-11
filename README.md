@@ -20,3 +20,5 @@ The Vite development server defaults to port 5173 and the API defaults to 3001. 
 ## API
 
 The API uses Helmet, CORS origin allowlisting, bounded JSON bodies, request validation, Supabase calls with a timeout, and a basic process-local request limiter. The limiter is not shared between instances; use a shared production limiter before scaling public write endpoints.
+
+Employer job orders use Paystack-hosted checkout. Set `PAYSTACK_SECRET_KEY` only in the backend environment. Configure the Paystack webhook at `/api/payments/paystack/webhook`; the default browser return URL is the first allowed frontend origin plus `/employers`.

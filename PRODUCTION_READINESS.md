@@ -1,6 +1,6 @@
 # Production readiness
 
-This repository contains the public React site and a small Express API. It does not yet implement the full employer portal described in the developer scope. Do not treat a successful frontend build as acceptance for payment, account onboarding, client dashboards, or candidate data processing.
+This repository contains the public React site and a small Express API. Paystack checkout is implemented, but the full employer portal described in the developer scope is not. Do not treat a successful frontend build as acceptance for account onboarding, client dashboards, or candidate data processing.
 
 ## Changes in this readiness pass
 
@@ -8,6 +8,7 @@ This repository contains the public React site and a small Express API. It does 
 - Vacancy details send candidates to that vacancy's configured HTTPS application URL. When a link is absent, the page explains the state and offers a contact route instead of showing a nonfunctional sign-in link.
 - External Google Fonts were removed so the site does not make an unneeded third-party request or depend on that service to render.
 - The API now applies separate in-memory request limits for login, public writes, staff routes, and general reads; emits `Retry-After`; expires old buckets; times out Supabase requests; and refuses insecure or missing frontend origins in production.
+- Employer checkout now initializes Paystack transactions server-side, stores the job order and pending payment reference, verifies amount/currency/status against Paystack, and supports signed callback/webhook confirmation.
 - `backend/.env.example` documents the server configuration without containing credentials.
 - A GitHub Actions workflow now runs locked installs, high-severity npm dependency audits, frontend lint/build, and backend syntax validation on pushes and pull requests.
 - Production API startup now fails closed when the frontend origin or required Supabase credentials are missing or insecure.
@@ -16,7 +17,7 @@ This repository contains the public React site and a small Express API. It does 
 
 These require IMFORCE decisions, credentials, infrastructure, or the connected systems and are not safely implementable from this repository alone:
 
-- Employer identity and email OTP verification, durable client accounts, agreement versioning and signatures, PayPod invoice generation, NetCash payment confirmation, and activation rules.
+- Employer identity and email OTP verification, durable client accounts, agreement versioning and signatures, activation-fee business approvals/credits/refunds, and Talent One synchronization. Paystack checkout replaces the earlier PayPod/NetCash proposal, subject to IMFORCE approval of this scope change.
 - Human advert approval with reviewer/version/reason audit records; client job tracking, candidate submissions, interview feedback, and Talent One synchronization.
 - Nexora AI API contract and vacancy destinations, plus the documented and tested outage fallback queue.
 - Supabase schema and row-level security policy review, data retention/privacy decisions, migration/reconciliation, backup and restore evidence, incident response, and production secret provisioning.
@@ -25,7 +26,10 @@ These require IMFORCE decisions, credentials, infrastructure, or the connected s
 
 ## Required deployment configuration
 
-- Set `NODE_ENV=production`, `FRONTEND_ORIGIN` to the exact HTTPS site origin(s), Supabase URL, anon key, and service-role key in the host's secret manager. Never set the service-role key in a `VITE_` variable.
+- Set `NODE_ENV=production`, `FRONTEND_ORIGIN` to the exact HTTPS site origin(s), Supabase URL, anon key, service-role key, and `PAYSTACK_SECRET_KEY` in the host's secret manager. Never set either server-only secret in a `VITE_` variable.
+- Configure Paystack's webhook URL as `https://<api-host>/api/payments/paystack/webhook`. Add `PAYSTACK_WEBHOOK_SECRET` when using the timestamped `Paystack-Signature` signing mode; legacy `x-paystack-signature` uses the API secret. Set `PAYSTACK_CALLBACK_URL` only when the callback is not the default allowed origin `/employers` URL.
+- Add the Paystack secret key to `backend/.env` for local testing (or the host secret manager in production); this workspace's `.env` currently has no `PAYSTACK_SECRET_KEY`. Do not paste API secrets into chat or put them in a `VITE_` variable. Complete a Paystack test-mode payment and webhook check before enabling a live key.
+- Enable customer transaction receipts and set the support email in Paystack Dashboard settings so the proof-of-payment message shown after checkout is delivered.
 - Set `TRUST_PROXY_HOPS` only to the verified number of trusted proxies in front of Express. Leave it unset for direct access.
 - Use HTTPS, restrictive database policies, least-privilege staff provisioning with MFA, database backups with restore drills, monitoring/alerting, and a shared rate limiter before exposing public submissions at scale.
 - Review vacancy application URLs and only publish approved listings with the correct matching Nexora AI destination.
