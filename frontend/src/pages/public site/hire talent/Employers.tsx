@@ -753,6 +753,8 @@ function Employers() {
               <p>
                 <strong>Job order enquiry:</strong> Submitting sends these
                 details to IMFORCE so the team can contact you about next steps.
+                See our <Link to="/privacy">privacy notice</Link> for how we use
+                and protect this information.
               </p>
               <p>
                 The ZAR 499 activation fee is charged once per job order. Any

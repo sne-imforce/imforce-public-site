@@ -181,6 +181,17 @@
   margin: 0 auto;
   padding: 17px 0;
   border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+
+.global-footer__legal {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .global-footer__bottom p {

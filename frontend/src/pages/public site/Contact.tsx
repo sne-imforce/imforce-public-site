@@ -179,9 +179,10 @@ function Contact() {
               </div>
 
               <p className="contact-form__privacy">
-                When you submit this form, your message is sent to IMFORCE
-                securely to IMFORCE. Do not include passwords, bank details, ID
-                numbers or other sensitive information.
+                When you submit this form, your message is sent securely to
+                IMFORCE. Do not include passwords, bank details, ID numbers or
+                other sensitive information. Read how we handle your information
+                in our <Link to="/privacy">privacy notice</Link>.
               </p>
 
               {formStatus && <p role="status">{formStatus}</p>}

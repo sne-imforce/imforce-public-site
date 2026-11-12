@@ -9,6 +9,7 @@ import Contact from './pages/public site/Contact'
 import FeeCalculator from './pages/public site/Fee Calculator'
 import Home from './pages/public site/Home'
 import Placement from './pages/public site/Placement'
+import PrivacyPolicy from './pages/public site/PrivacyPolicy'
 import Certifications from './pages/public site/certifications/Certifications'
 import Employers from './pages/public site/hire talent/Employers'
 
@@ -123,6 +124,18 @@ const routeSeo = {
       url: 'https://www.imforce.co.za/certifications',
     },
   },
+  '/privacy': {
+    title: 'Privacy notice',
+    description:
+      'How IMFORCE Talent Recruitment collects, uses and protects personal information under POPIA, and how to exercise your rights.',
+    keywords: ['IMFORCE privacy', 'POPIA', 'personal information'],
+    schema: {
+      '@context': 'https://schema.org',
+      '@type': 'WebPage',
+      name: 'Privacy notice',
+      url: 'https://www.imforce.co.za/privacy',
+    },
+  },
   '/admin': {
     title: 'Staff sign-in',
     description: 'Authorised IMFORCE staff sign-in.',
@@ -169,6 +182,7 @@ function AppContent() {
           element={<Navigate to="/certifications#credentials" replace />}
         />
         <Route path="/fee-calculator" element={<FeeCalculator />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="*" element={<Home />} />
       </Routes>
       <Footer />

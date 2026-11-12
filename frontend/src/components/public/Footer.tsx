@@ -98,6 +98,7 @@ function Footer() {
 
       <div className="global-footer__bottom">
         <p>© {new Date().getFullYear()} IMFORCE Talent Recruitment. All rights reserved.</p>
+        <Link className="global-footer__legal" to="/privacy">Privacy notice</Link>
       </div>
     </footer>
   )
