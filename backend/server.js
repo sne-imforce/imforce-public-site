@@ -742,7 +742,7 @@ app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
 })
 app.get('/api/staff/audit', requireStaff, async (_req, res) => {
   try {
-    const entries = await supabase('/rest/v1/staff_audit_log?select=occurred_at,actor_email,action,entity_type,entity_id,detail&order=occurred_at.desc&limit=50')
+    const entries = await supabase('/rest/v1/staff_audit_log?select=occurred_at,actor_email,action,entity_type,entity_id,detail&order=occurred_at.desc&limit=500')
     res.json({ entries })
   } catch { res.status(502).json({ error: 'The activity log could not be loaded.' }) }
 })

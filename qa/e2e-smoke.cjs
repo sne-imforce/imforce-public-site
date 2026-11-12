@@ -94,19 +94,19 @@ async function stubApi(page, opts = {}) {
     const btn = page.locator('button.staff-access-submit')
     await btn.click(); await btn.click({ force: true, timeout: 200 }).catch(() => {})
     ok('login button shows busy state', /Signing in/.test(await btn.textContent()))
-    await page.getByText('Vacancy management').waitFor()
+    await page.getByRole('heading', { name: 'Inventory' }).waitFor()
     ok('double-click sends only one login request', state.loginCalls === 1, `calls=${state.loginCalls}`)
-    await page.locator('summary', { hasText: 'Hi' }).click()
-    ok('enquiry shows name/phone/type', await page.getByText('Lerato').isVisible() && await page.getByText('Job opportunities').first().isVisible())
+    await page.getByRole('button', { name: 'Show details' }).first().click()
+    { const details = page.locator('.data-table__details-row'); ok('enquiry shows name/phone/type', await details.getByText('Lerato').isVisible() && await details.getByText('082').isVisible() && await details.getByText('Job opportunities').isVisible()) }
     ok('stored XSS in enquiry is rendered as text', !dialog && await page.getByText('<img src=x onerror=alert(1)>').isVisible())
     const tokenStored = await page.evaluate(() => [sessionStorage.getItem('imforce-staff-access-token'), localStorage.getItem('imforce-staff-access-token')])
     ok('token in sessionStorage only', tokenStored[0] === 'a.b.c' && tokenStored[1] === null)
-    await page.click('button.staff-access-signout'); await page.waitForTimeout(200)
+    await page.getByRole('button', { name: 'Sign out' }).click(); await page.waitForTimeout(200)
     ok('sign out calls server logout and clears token', state.logout === true && await page.evaluate(() => sessionStorage.getItem('imforce-staff-access-token')) === null)
 
     // session expiry handling
     await page.fill('input[name="email"]', 'staff@imforce.co.za'); await page.fill('input[name="password"]', 'pw')
-    await page.click('button.staff-access-submit'); await page.getByText('Vacancy management').waitFor()
+    await page.click('button.staff-access-submit'); await page.getByRole('heading', { name: 'Inventory' }).waitFor()
     state.expire = true
     await page.evaluate(() => { sessionStorage.setItem('imforce-staff-access-expires', String(Date.now() - 1)) })
     await page.goto(BASE + '/admin'); await page.waitForTimeout(300)
@@ -136,7 +136,7 @@ async function stubApi(page, opts = {}) {
     await page.fill('input[name="code"]', '000000'); await page.click('button.staff-access-submit'); await page.getByRole('alert').waitFor()
     ok('MFA: wrong code keeps the user on the code step', await page.locator('input[name="code"]').count() === 1)
     await page.fill('input[name="code"]', '123 456'); await page.click('button.staff-access-submit')
-    await page.getByText('Vacancy management').waitFor()
+    await page.getByRole('heading', { name: 'Inventory' }).waitFor()
     ok('MFA: correct code (with a space) signs in', verifyCalls === 2)
     await page.close()
   }

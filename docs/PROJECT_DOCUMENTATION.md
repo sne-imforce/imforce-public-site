@@ -197,7 +197,9 @@ sequenceDiagram
     ├── public/                     Static files served as-is (_headers, robots.txt, sitemap, icons)
     └── src/
         ├── App.tsx                 Routes and per-route SEO
-        ├── components/public/      Navbar, Hero, Footer, JobsAndInsights, StaffAccessModal (/admin)
+        ├── admin/                  Staff workspace: AdminLayout (sign-in, tabs), InventoryPage, JobPostsPage,
+        │                           AuditLogPage, reusable DataTable (search, sort, filters, paging)
+        ├── components/public/      Navbar, Hero, Footer, JobsAndInsights, StaffAccessModal (footer link to /admin)
         ├── components/seo/Seo.tsx  Title, meta, canonical, JSON-LD
         ├── components/ui/DatePicker.tsx
         ├── data/api.ts             API client and staff session handling
@@ -225,7 +227,9 @@ sequenceDiagram
 | `/fee-calculator` | Fee calculator | Can prefill the employer form |
 | `/contact` | Contact | `?subject=` prefill; hidden bot-trap field |
 | `/privacy` | Privacy notice (POPIA) | Linked from the footer and both forms |
-| `/admin` | Staff sign-in (password + authenticator code) and dashboard | `noindex`; idle sign-out after 15 minutes |
+| `/admin` | Staff sign-in (password + authenticator code), then **Inventory**: summary tiles, Job posts table, Enquiries table | `noindex` (all `/admin/*`); idle sign-out after 15 minutes |
+| `/admin/jobs` | **Job posts** subscreen: new post, or edit with `?edit=<id>`; live preview | Staff only |
+| `/admin/audit` | **Audit log** subscreen | Staff only |
 | `*` | Falls back to Home | |
 
 ### UX and accessibility conventions
@@ -234,6 +238,7 @@ sequenceDiagram
 - Buttons show a busy state while a request is in flight, which prevents double submission.
 - Error messages are written for end users ("Check your internet connection…") and never contain technical details.
 - The `/admin` link is a small gear icon in the footer, kept out of the main navigation.
+- Staff workspace tables (job posts, enquiries, audit log) share one `DataTable` component: a search box, a filter for each useful column, sortable column headers (with `aria-sort`), and 10 rows per page with ‹ › buttons and a "Showing 11–20 of 47" count. Enquiry rows expand to show full details and a reply link. Below 760 px wide, each row becomes a labelled card, so nothing is squeezed.
 - Accessibility: every page passes an automated axe-core audit (WCAG 2.1 AA and best practices) on desktop and mobile. Accent text uses `--color-accent-text` (#296fb0), which meets 4.5:1 contrast on all light backgrounds; keep using it for text instead of `--color-accent`.
 
 ### Frontend security controls
@@ -274,7 +279,7 @@ Every staff response is sent with `Cache-Control: no-store`.
 | `POST /api/staff/login` | Step 1: `{email,password}`. With MFA on (the default) it returns `{mfa:{step:'enroll'\|'verify', ticket, factorId, qrCode?, secret?}}` and **no usable session**. A wrong password and a non-staff account get the **same** 401 message. The account locks for 15 minutes after 5 failures. | 5 / IP / min |
 | `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code}` (6 digits) → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
-| `GET /api/staff/audit` | Last 50 staff audit log entries | 60 |
+| `GET /api/staff/audit` | Latest 500 staff audit log entries (searched and paged in the browser) | 60 |
 | `GET /api/staff/me` | Current staff email | 60 |
 | `GET /api/staff/vacancies` | All vacancies, including client names | 60 |
 | `POST /api/staff/vacancies` | Create (published immediately) | 60 |
@@ -441,8 +446,8 @@ On their first sign-in, the staff member is shown a QR code to scan with an auth
 | Backend security regression (43 tests) | `cd backend && npm test` | Two-factor sign-in (enrol, verify, wrong code, lockout, AAL1 refused), audit logging, validation, ReDoS fix, CORS, 413/415, auth and enumeration, account lockout, logout revocation, UUID checks, payment amount/currency/email verification, webhook signatures, mass-assignment protection, rate limits, honeypots, attack detection and blocking, alert throttling, log-injection sanitising, safety valves. Supabase, Paystack and the alert webhook are mocked, so it runs offline. |
 | Frontend lint and type-check | `cd frontend && npm run lint && npm run build` | Static correctness |
 | Database permissions (29 checks) | `qa/db-permissions.sh` on a scratch Postgres (see QA report §5) | anon cannot read `client_name`, enquiries, security events or the audit log; audit log cannot be edited or deleted, even by the owner; constraints; idempotency |
-| Browser end-to-end (73 checks) | `node qa/e2e-smoke.cjs` (see QA report §5) | All routes on desktop and mobile: no CSP violations, no JS errors, no horizontal overflow; contact flow; staff login, two-step sign-in, logout, expiry; stored-XSS rendering |
-| Accessibility | axe-core in Playwright (see QA report §5) | WCAG 2.1 AA and best practices on every page, desktop and mobile: 0 violations |
+| Browser end-to-end (73 + 37 checks) | `node qa/e2e-smoke.cjs` and `node qa/e2e-admin.cjs` (see QA report §5) | All routes on desktop and mobile: no CSP violations, no JS errors, no horizontal overflow; contact flow; staff login, two-step sign-in, logout, expiry; stored-XSS rendering |
+| Accessibility | axe-core in Playwright (see QA report §5) | WCAG 2.1 AA and best practices on every public page and every signed-in admin screen, desktop and mobile: 0 violations |
 
 Recommended next step: commit the Playwright E2E script as a proper `@playwright/test` suite and run it in CI.
 

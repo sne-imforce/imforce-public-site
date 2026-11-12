@@ -36,6 +36,10 @@ Round 2 closed the two remaining high-severity open items (no privacy notice, pa
 
 Browser testing of the new sign-in also caught **three defects in the new code before release**. The most serious was that the password typed on step 1 reappeared, readable, in the code field on step 2. All three are fixed and covered by E2E checks (R2-09 to R2-11 below).
 
+### Round 3 (12 November 2026): staff workspace
+
+`/admin` was restructured into an **Inventory** hub with two subscreens, **Job posts** and **Audit log**. A shared tab bar and the Home and Sign out buttons appear on all three. Every list is now a table with search, sortable columns and filters, showing 10 rows per page with ‹ › buttons, so long lists never clutter the screen. On phones each row becomes a labelled card. The accessibility audit found one heading-order issue on the new Job posts screen, which was fixed before release. All admin URLs (not only `/admin` itself) are now `noindex`.
+
 ---
 
 ## 2. Findings and remediation
@@ -158,7 +162,8 @@ All results were reproduced in the final QA pass. Commands:
 | API and security unit/integration | `cd backend && npm test` | **43 / 43 passed** (including 8 MFA and 2 audit-log tests) |
 | Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **29 / 29 passed**; migrations 001–005 re-run safely |
 | Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **73 / 73 passed** |
-| Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 routes × desktop and mobile | **0 violations** |
+| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **37 / 37 passed**: tabs, paging, search, sort, filters, expand, edit, delete, deep links, phone card layout |
+| Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |
 | Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |
 | Live server smoke | `npm start`: health, honeypot alarm, access log, SIGTERM | Pass |
 | Frontend static checks | `npm run lint && npm run build` | Pass |

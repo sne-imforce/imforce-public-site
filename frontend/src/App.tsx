@@ -1,7 +1,10 @@
 import './App.css'
+import AdminLayout from './admin/AdminLayout'
+import AuditLogPage from './admin/AuditLogPage'
+import InventoryPage from './admin/InventoryPage'
+import JobPostsPage from './admin/JobPostsPage'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Footer from './components/public/Footer'
-import { StaffAccessPage } from './components/public/StaffAccessModal'
 import Seo from './components/seo/Seo'
 import About from './pages/public site/About'
 import Careers from './pages/public site/Careers'
@@ -158,7 +161,9 @@ const routeSeo = {
 
 function AppContent() {
   const location = useLocation()
-  const seo = routeSeo[location.pathname as keyof typeof routeSeo] ?? {
+  // Every staff workspace screen (/admin, /admin/jobs, /admin/audit) is noindex.
+  const seoPath = location.pathname.startsWith('/admin') ? '/admin' : location.pathname
+  const seo = routeSeo[seoPath as keyof typeof routeSeo] ?? {
     title: 'IMFORCE Talent Recruitment',
     description:
       'IMFORCE Talent Recruitment connects southern African employers and job seekers through permanent staffing, recruitment, and placement services.',
@@ -172,7 +177,12 @@ function AppContent() {
         <Route path="/" element={<Home />} />
         <Route path="/about" element={<About />} />
         <Route path="/careers" element={<Careers />} />
-        <Route path="/admin" element={<StaffAccessPage />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<InventoryPage />} />
+          <Route path="jobs" element={<JobPostsPage />} />
+          <Route path="audit" element={<AuditLogPage />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Route>
         <Route path="/contact" element={<Contact />} />
         <Route path="/employers" element={<Employers />} />
         <Route path="/services/placements" element={<Placement />} />
