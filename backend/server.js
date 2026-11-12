@@ -86,6 +86,19 @@ const security = createSecurityMonitor({
 })
 
 app.use(helmet())
+// One JSON line per API request (no query strings or bodies, so no personal data).
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next()
+  const started = process.hrtime.bigint()
+  res.on('finish', () => {
+    if (process.env.NODE_ENV === 'test') return
+    console.log(JSON.stringify({
+      level: 'access', at: new Date().toISOString(), method: req.method, path: req.path.slice(0, 200),
+      status: res.statusCode, ms: Number((process.hrtime.bigint() - started) / 1_000_000n), ip: req.ip,
+    }))
+  })
+  next()
+})
 app.use(cors({ origin: allowedOrigins }))
 app.use(security.guard)
 app.use('/api', (req, res, next) => {
@@ -773,6 +786,19 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: 'Unexpected server error.' })
 })
 
-if (require.main === module) app.listen(port, () => console.log(`IMFORCE API listening on ${port}`))
+if (require.main === module) {
+  const server = app.listen(port, () => console.log(`IMFORCE API listening on ${port}`))
+  // Finish in-flight requests (for example a payment verification) before exiting on deploy/restart.
+  const shutdown = (signal) => {
+    console.log(`${signal} received: closing the API gracefully.`)
+    server.close(() => process.exit(0))
+    setTimeout(() => process.exit(1), 10_000).unref()
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('unhandledRejection', (reason) => {
+    console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), message: 'Unhandled promise rejection', detail: String(reason?.message ?? reason).slice(0, 300) }))
+  })
+}
 
 module.exports = { app, security, isEmail }
