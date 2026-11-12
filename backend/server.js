@@ -597,9 +597,29 @@ app.post('/api/staff/login', async (req, res) => {
       return res.status(401).json({ error: loginFailureMessage })
     }
     loginFailures.delete(normalizedEmail)
+    await audit(req, 'staff.login', { actor: session.user })
     res.json({ accessToken: session.access_token, email: session.user.email, expiresIn: Number(session.expires_in) || 3600 })
   } catch { res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' }) }
 })
+
+// Append-only record of staff actions (migration 005). Never blocks the action
+// itself: if the write fails, the failure is logged loudly for follow-up.
+async function audit(req, action, { actor = req.staffUser, entityType = null, entityId = null, detail = {} } = {}) {
+  const entry = {
+    actor_user_id: actor?.id ?? null,
+    actor_email: actor?.email ? String(actor.email).slice(0, 254) : null,
+    action,
+    entity_type: entityType,
+    entity_id: entityId ? String(entityId).slice(0, 64) : null,
+    ip_address: String(req.ip || '').slice(0, 64),
+    detail,
+  }
+  try {
+    await supabase('/rest/v1/staff_audit_log', { method: 'POST', body: entry, prefer: 'return=minimal' })
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), message: 'Audit log write failed', action, status: error.status ?? null }))
+  }
+}
 
 async function revokeSession(token) {
   try { await supabase('/auth/v1/logout?scope=local', { key: anonKey, token, method: 'POST' }) }
@@ -608,6 +628,7 @@ async function revokeSession(token) {
 
 app.post('/api/staff/logout', requireStaff, async (req, res) => {
   await revokeSession(req.staffToken)
+  await audit(req, 'staff.logout')
   res.json({ ok: true })
 })
 
@@ -618,7 +639,7 @@ app.get('/api/staff/vacancies', requireStaff, async (_req, res) => {
     res.json({ vacancies: rows.map(toVacancy) })
   } catch { res.status(502).json({ error: 'Vacancies could not be loaded.' }) }
 })
-app.get('/api/staff/inquiries', requireStaff, async (_req, res) => {
+app.get('/api/staff/inquiries', requireStaff, async (req, res) => {
   try {
     const [contacts, employers] = await Promise.all([
       supabase('/rest/v1/contact_inquiries?select=id,name,email,phone,enquiry_type,subject,message,created_at&order=created_at.desc&limit=100'),
@@ -626,6 +647,8 @@ app.get('/api/staff/inquiries', requireStaff, async (_req, res) => {
     ])
     const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer' }))]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    // Enquiries hold personal information, so viewing them is itself audited (POPIA accountability).
+    await audit(req, 'enquiries.view', { entityType: 'enquiries', detail: { count: inquiries.length } })
     res.json({ inquiries })
   } catch { res.status(502).json({ error: 'Enquiries could not be loaded.' }) }
 })
@@ -633,9 +656,17 @@ app.get('/api/staff/inquiries', requireStaff, async (_req, res) => {
 app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
   try {
     const [row] = await supabase('/rest/v1/vacancies', { method: 'POST', body: fromVacancy(req.body), prefer: 'return=representation' })
+    await audit(req, 'vacancy.create', { entityType: 'vacancy', entityId: row.id, detail: { title: row.title, client: row.client_name } })
     res.status(201).json({ vacancy: toVacancy(row) })
   } catch (error) { res.status(error.status === 400 ? 400 : 502).json({ error: error.status === 400 ? error.message : 'Vacancy could not be saved.' }) }
 })
+app.get('/api/staff/audit', requireStaff, async (_req, res) => {
+  try {
+    const entries = await supabase('/rest/v1/staff_audit_log?select=occurred_at,actor_email,action,entity_type,entity_id,detail&order=occurred_at.desc&limit=50')
+    res.json({ entries })
+  } catch { res.status(502).json({ error: 'The activity log could not be loaded.' }) }
+})
+
 function requireVacancyId(req, res, next) {
   if (!uuidPattern.test(req.params.id)) {
     security.record(req, 'invalid-record-id', 'medium', 'Staff vacancy route called with a non-UUID id')
@@ -646,15 +677,21 @@ function requireVacancyId(req, res, next) {
 
 app.put('/api/staff/vacancies/:id', requireStaff, requireVacancyId, async (req, res) => {
   try {
-    const rows = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}`, { method: 'PATCH', body: fromVacancy(req.body), prefer: 'return=representation' })
+    const changes = fromVacancy(req.body)
+    const [before] = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}&select=*`)
+    if (!before) return res.status(404).json({ error: 'Vacancy not found.' })
+    const rows = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}`, { method: 'PATCH', body: changes, prefer: 'return=representation' })
     if (!rows.length) return res.status(404).json({ error: 'Vacancy not found.' })
+    const changedFields = Object.keys(changes).filter((key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(rows[0][key] ?? null))
+    await audit(req, 'vacancy.update', { entityType: 'vacancy', entityId: req.params.id, detail: { title: rows[0].title, changedFields } })
     res.json({ vacancy: toVacancy(rows[0]) })
   } catch (error) { res.status(error.status === 400 ? 400 : 502).json({ error: error.status === 400 ? error.message : 'Vacancy could not be updated.' }) }
 })
 app.delete('/api/staff/vacancies/:id', requireStaff, requireVacancyId, async (req, res) => {
   try {
-    const rows = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}&select=id`, { method: 'DELETE', prefer: 'return=representation' })
+    const rows = await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(req.params.id)}&select=id,title,client_name`, { method: 'DELETE', prefer: 'return=representation' })
     if (!rows?.length) return res.status(404).json({ error: 'Vacancy not found.' })
+    await audit(req, 'vacancy.delete', { entityType: 'vacancy', entityId: req.params.id, detail: { title: rows[0].title, client: rows[0].client_name } })
     res.json({ ok: true })
   } catch { res.status(502).json({ error: 'Vacancy could not be deleted.' }) }
 })

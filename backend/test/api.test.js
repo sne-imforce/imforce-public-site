@@ -198,3 +198,40 @@ test('public write endpoints are rate limited with Retry-After', async () => {
   assert.equal(last.status, 429)
   assert.ok(Number(last.headers.get('retry-after')) > 0)
 })
+
+test('staff actions are written to the audit log with actor, entity and changed fields', async () => {
+  const auth = { Authorization: `Bearer ${VALID_TOKEN}` }
+  const before = state.audit.length
+  await call('/api/staff/login', { method: 'POST', body: { email: 'auditor-check@imforce.co.za', password: 'nope' } })
+  assert.equal(state.audit.length, before, 'failed sign-ins go to security_events, not the staff audit log')
+
+  const vacancy = { clientName: 'Audit Client', title: 'Audit Clerk', location: 'Durban', region: 'KZN', category: 'Admin', employmentType: 'Permanent', summary: 'Audit role', responsibilities: ['Filing'] }
+  const created = await call('/api/staff/vacancies', { method: 'POST', headers: auth, body: vacancy })
+  const id = created.data.vacancy.id
+  const updated = await call(`/api/staff/vacancies/${id}`, { method: 'PUT', headers: auth, body: { ...vacancy, title: 'Senior Audit Clerk', salary: 'ZAR 20 000' } })
+  assert.equal(updated.status, 200)
+  await call('/api/staff/inquiries', { headers: auth })
+  await call(`/api/staff/vacancies/${id}`, { method: 'DELETE', headers: auth })
+
+  const entries = state.audit.slice(before)
+  assert.deepEqual(entries.map((entry) => entry.action), ['vacancy.create', 'vacancy.update', 'enquiries.view', 'vacancy.delete'])
+  for (const entry of entries) {
+    assert.equal(entry.actor_email, 'staff@imforce.co.za')
+    assert.ok(entry.ip_address)
+  }
+  assert.deepEqual(entries[1].detail.changedFields.sort(), ['salary', 'title'])
+  assert.equal(entries[3].detail.title, 'Senior Audit Clerk', 'deleted record keeps a snapshot of what was removed')
+
+  const log = await call('/api/staff/audit', { headers: auth })
+  assert.equal(log.status, 200)
+  assert.ok(log.data.entries.length >= 4)
+  assert.equal((await call('/api/staff/audit')).status, 401, 'the activity log is staff-only')
+})
+
+test('sign-in and sign-out are audited', async () => {
+  const before = state.audit.length
+  const login = await call('/api/staff/login', { method: 'POST', body: { email: 'second.staff@imforce.co.za', password: 'correct-horse' } })
+  assert.equal(login.status, 200)
+  await call('/api/staff/logout', { method: 'POST', body: {}, headers: { Authorization: `Bearer ${VALID_TOKEN}` } })
+  assert.deepEqual(state.audit.slice(before).map((entry) => entry.action), ['staff.login', 'staff.logout'])
+})

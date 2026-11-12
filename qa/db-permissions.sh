@@ -34,4 +34,13 @@ deny "invalid severity rejected" "insert into public.security_events(event_type,
 deny "duplicate payment reference rejected" "insert into public.employer_inquiries(details) values ('{\"paymentReference\":\"IMF-dup\"}'),('{\"paymentReference\":\"IMF-dup\"}');" "duplicate key"
 deny "anon cannot run purge function" "set role anon; select public.purge_old_security_events();" "permission denied"
 ok   "updated_at trigger fires" "t" "update public.vacancies set updated_at = now() - interval '1 day' where title='Open role'; select bool_and(updated_at > now() - interval '1 minute') from public.vacancies where title='Open role';"
+ok   "service_role can append to staff audit log" "1" "set role service_role; insert into public.staff_audit_log(action, actor_email) values ('vacancy.delete','a@b.co'); select count(*) from public.staff_audit_log where actor_email='a@b.co';"
+deny "service_role cannot edit audit history" "set role service_role; update public.staff_audit_log set actor_email='x';" "permission denied|append-only"
+deny "service_role cannot delete audit history" "set role service_role; delete from public.staff_audit_log;" "permission denied|append-only"
+deny "database owner cannot edit audit history" "update public.staff_audit_log set actor_email='x';" "append-only"
+deny "database owner cannot delete audit history" "delete from public.staff_audit_log;" "append-only"
+deny "database owner cannot truncate audit history" "truncate public.staff_audit_log;" "append-only"
+deny "unknown audit action rejected" "insert into public.staff_audit_log(action) values ('vacancy.hack');" "check constraint"
+deny "anon cannot read audit log" "set role anon; select 1 from public.staff_audit_log;" "permission denied"
+deny "authenticated cannot read audit log" "set role authenticated; select 1 from public.staff_audit_log;" "permission denied"
 echo; [ $fails -eq 0 ] && echo "All database checks passed." || { echo "$fails database check(s) failed."; exit 1; }

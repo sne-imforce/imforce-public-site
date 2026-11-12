@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import DatePicker from '../ui/DatePicker'
 import { industries, type IndustryName } from '../../data/industries'
 import { formatDateDmy, formatSalary } from '../../utils/dates'
-import { getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired, saveStaffToken, staffLogin, staffLogout, type StaffInquiry } from '../../data/api'
+import { getStaffAudit, getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired, saveStaffToken, staffLogin, staffLogout, type StaffAuditEntry, type StaffInquiry } from '../../data/api'
 import {
   addRecruiterVacancy,
   deleteRecruiterVacancy,
@@ -29,6 +29,28 @@ function paymentLabel(status: unknown): { text: string; tone: 'success' | 'warni
   if (status === 'initialization_failed') return { text: 'Checkout failed', tone: 'danger' }
   return { text: 'Awaiting payment', tone: 'warning' }
 }
+
+const auditActionLabels: Record<string, string> = {
+  'staff.login': 'Signed in',
+  'staff.logout': 'Signed out',
+  'enquiries.view': 'Viewed enquiries',
+  'vacancy.create': 'Created vacancy',
+  'vacancy.update': 'Updated vacancy',
+  'vacancy.delete': 'Deleted vacancy',
+}
+
+function describeAudit(entry: StaffAuditEntry) {
+  const label = auditActionLabels[entry.action] ?? entry.action
+  const title = typeof entry.detail?.title === 'string' ? ` “${entry.detail.title}”` : ''
+  const fields = Array.isArray(entry.detail?.changedFields) && entry.detail.changedFields.length
+    ? ` (${(entry.detail.changedFields as string[]).map((field) => field.replace(/_/g, ' ')).join(', ')})`
+    : ''
+  return `${label}${title}${fields}`
+}
+
+const formatAuditTime = (value: string) => new Intl.DateTimeFormat('en-ZA', {
+  timeZone: 'Africa/Johannesburg', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+}).format(new Date(value))
 
 // Only build a mailto: link from a plain, single address (no header injection).
 const isSafeEmail = (value: string) => /^[^\s@<>"?&,;:]+@[^\s@<>"?&,;:]+\.[^\s@<>"?&,;:]+$/.test(value) && value.length <= 254
@@ -114,6 +136,15 @@ export function StaffAccessPage() {
   const [draft, setDraft] = useState<VacancyDraft>({ ...emptyDraft })
   const [inquiries, setInquiries] = useState<StaffInquiry[]>([])
   const [signingIn, setSigningIn] = useState(false)
+  const [auditEntries, setAuditEntries] = useState<StaffAuditEntry[] | null>(null)
+  const [auditError, setAuditError] = useState('')
+
+  const loadAudit = async () => {
+    setAuditError('')
+    try { setAuditEntries((await getStaffAudit()).entries) } catch (error) {
+      setAuditError(error instanceof Error ? error.message : 'The activity log could not be loaded.')
+    }
+  }
 
   useEffect(() => {
     if (!getStaffToken()) return
@@ -165,6 +196,8 @@ export function StaffAccessPage() {
     setSnackbarMessage('')
     setEditingId(null)
     setDraft({ ...emptyDraft })
+    setAuditEntries(null)
+    setAuditError('')
   }, [])
 
   const signOut = async () => {
@@ -424,6 +457,30 @@ export function StaffAccessPage() {
                 </ul>
               )}
             </section>
+
+            <details
+              className="staff-access-page__list staff-activity"
+              onToggle={(event) => { if (event.currentTarget.open && auditEntries === null) void loadAudit() }}
+            >
+              <summary>
+                <h2>Recent staff activity</h2>
+                <span className="staff-activity__hint">Who changed what, and when</span>
+              </summary>
+              {auditError && <p className="staff-access-error" role="alert">{auditError}</p>}
+              {auditEntries === null && !auditError && <p className="staff-access-description">Loading activity…</p>}
+              {auditEntries?.length === 0 && <p className="staff-access-description">No staff activity has been recorded yet.</p>}
+              {auditEntries && auditEntries.length > 0 && (
+                <ol className="staff-activity__list">
+                  {auditEntries.map((entry, index) => (
+                    <li key={`${entry.occurred_at}-${index}`}>
+                      <time dateTime={entry.occurred_at}>{formatAuditTime(entry.occurred_at)}</time>
+                      <span>{describeAudit(entry)}</span>
+                      <span className="staff-activity__actor">{entry.actor_email ?? 'Unknown user'}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </details>
 
             <div className="staff-access-page__layout">
               <div className="staff-access-page__main">

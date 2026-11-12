@@ -25,7 +25,7 @@ Object.assign(process.env, {
 
 const realFetch = globalThis.fetch
 const state = {
-  calls: [], alerts: [], events: [], contacts: [], employers: [], vacancies: [],
+  calls: [], alerts: [], events: [], contacts: [], employers: [], vacancies: [], audit: [],
   paystackTransaction: null,
 }
 
@@ -41,7 +41,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (url.origin === SUPABASE) {
     state.calls.push({ method, path: url.pathname, search: url.search, body, auth })
     if (url.pathname === '/auth/v1/token') {
-      if (body.email === 'staff@imforce.co.za' && body.password === 'correct-horse') return json({ access_token: VALID_TOKEN, expires_in: 3600, user: { id: STAFF_ID, email: body.email } })
+      if (['staff@imforce.co.za', 'second.staff@imforce.co.za'].includes(body.email) && body.password === 'correct-horse') return json({ access_token: VALID_TOKEN, expires_in: 3600, user: { id: STAFF_ID, email: body.email } })
       if (body.email === 'outsider@example.com' && body.password === 'correct-horse') return json({ access_token: OUTSIDER_TOKEN, expires_in: 3600, user: { id: OUTSIDER_ID, email: body.email } })
       return json({ message: 'Invalid login credentials' }, 400)
     }
@@ -53,6 +53,10 @@ globalThis.fetch = async (input, init = {}) => {
     }
     if (url.pathname === '/rest/v1/staff_profiles') return json(url.search.includes(STAFF_ID) ? [{ user_id: STAFF_ID }] : [])
     if (url.pathname === '/rest/v1/security_events') { state.events.push(body); return json(undefined, 201) }
+    if (url.pathname === '/rest/v1/staff_audit_log') {
+      if (method === 'POST') { state.audit.push(body); return json(undefined, 201) }
+      return json([...state.audit].reverse())
+    }
     if (url.pathname === '/rest/v1/contact_inquiries') {
       if (method === 'POST') { state.contacts.push(body); return json(undefined, 201) }
       return json(state.contacts)
@@ -72,12 +76,19 @@ globalThis.fetch = async (input, init = {}) => {
     if (url.pathname === '/rest/v1/vacancies') {
       if (method === 'DELETE') {
         const id = url.searchParams.get('id').slice(3)
-        const before = state.vacancies.length
+        const removed = state.vacancies.filter((row) => row.id === id)
         state.vacancies = state.vacancies.filter((row) => row.id !== id)
-        return json(before === state.vacancies.length ? [] : [{ id }])
+        return json(removed)
       }
       if (method === 'POST') { const row = { id: crypto.randomUUID(), status: 'published', created_at: new Date().toISOString(), ...body }; state.vacancies.push(row); return json([row], 201) }
-      return json(state.vacancies)
+      const idFilter = url.searchParams.get('id')?.slice(3)
+      if (method === 'PATCH') {
+        const row = state.vacancies.find((item) => item.id === idFilter)
+        if (!row) return json([])
+        Object.assign(row, body)
+        return json([row])
+      }
+      return json(idFilter ? state.vacancies.filter((item) => item.id === idFilter) : state.vacancies)
     }
     return json({ message: 'not mocked' }, 500)
   }

@@ -84,6 +84,15 @@ export type StaffInquiry = {
   message?: string
   details?: Record<string, string | boolean>
 }
+export type StaffAuditEntry = {
+  occurred_at: string
+  actor_email: string | null
+  action: string
+  entity_type: string | null
+  entity_id: string | null
+  detail: Record<string, unknown>
+}
+export const getStaffAudit = () => request<{ entries: StaffAuditEntry[] }>('/staff/audit', { headers: staffHeaders() })
 export const getStaffInquiries = () => request<{ inquiries: StaffInquiry[] }>('/staff/inquiries', { headers: staffHeaders() })
 
 export const saveVacancy = (data: Partial<Vacancy>, id?: string) => request<{ vacancy: Vacancy }>(

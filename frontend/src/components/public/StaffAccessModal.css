@@ -527,3 +527,63 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Staff activity (audit log) */
+.staff-activity {
+  margin-top: 16px;
+}
+
+.staff-activity > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  cursor: pointer;
+}
+
+.staff-activity > summary h2 {
+  display: inline;
+  margin: 0;
+}
+
+.staff-activity__hint {
+  color: var(--color-muted);
+  font: 500 13px/1.4 var(--font-interface);
+}
+
+.staff-activity > summary:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.staff-activity__list {
+  display: grid;
+  gap: 0;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staff-activity__list li {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) minmax(0, 220px);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgb(1 46 111 / 8%);
+  color: #15191f;
+  font: 500 13px/1.5 var(--font-interface);
+}
+
+.staff-activity__list time,
+.staff-activity__actor {
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .staff-activity__list li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
