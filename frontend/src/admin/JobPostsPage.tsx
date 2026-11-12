@@ -4,10 +4,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import DatePicker from '../components/ui/DatePicker'
 import { industries, type IndustryName } from '../data/industries'
 import {
-  addRecruiterVacancy, updateRecruiterVacancy, useRecruiterVacancies, type RecruiterVacancy,
+  addRecruiterVacancy, loadStaffVacancies, updateRecruiterVacancy, useRecruiterVacancies, type RecruiterVacancy,
 } from '../data/recruiterVacancies'
+import { reviewJobOrder, type StaffInquiry } from '../data/api'
 import { formatDateDmy, formatSalary } from '../utils/dates'
 import { useAdmin } from './adminContext'
+import { jobOrderReference, jobOrderToDraft, reviewState } from './jobOrders'
 import Spinner from '../components/ui/Spinner'
 
 const employmentTypes = ['Permanent', 'Contract', 'Fixed-term', 'Temporary']
@@ -54,20 +56,40 @@ function toDraft(vacancy: RecruiterVacancy | undefined): VacancyDraft {
 
 /** /admin/jobs — create a job post, or edit one with ?edit=<id>. */
 export default function JobPostsPage() {
-  const { notify } = useAdmin()
+  const { notify, inquiries, reloadInquiries } = useAdmin()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const vacancies = useRecruiterVacancies()
   const editingId = searchParams.get('edit')
+  const orderId = searchParams.get('order')
   const editing = editingId ? vacancies.find((vacancy) => vacancy.id === editingId) : undefined
-  // Re-mount the form when switching between "new" and a specific post.
-  return <JobPostForm key={editingId ?? 'new'} editing={editing} missing={Boolean(editingId && !editing)} onDone={(message) => { notify(message); navigate('/admin') }} />
+  const order = orderId ? inquiries.find((item) => item.kind === 'employer' && item.id === orderId) : undefined
+  // Re-mount the form when switching between "new", an edit and an approval.
+  return (
+    <JobPostForm
+      key={editingId ?? (orderId ? `order-${orderId}` : 'new')}
+      editing={editing}
+      order={order}
+      missing={Boolean((editingId && !editing) || (orderId && !order))}
+      onDone={(message) => { notify(message); navigate('/admin') }}
+      onApproved={async (message) => { await Promise.all([reloadInquiries(), loadStaffVacancies()]); notify(message); navigate('/admin/review') }}
+    />
+  )
 }
 
-type FormProps = { editing: RecruiterVacancy | undefined; missing: boolean; onDone: (message: string) => void }
+type FormProps = {
+  editing: RecruiterVacancy | undefined
+  /** Employer job order being approved (Approve & publish from Advert review). */
+  order: StaffInquiry | undefined
+  missing: boolean
+  onDone: (message: string) => void
+  onApproved: (message: string) => Promise<void>
+}
 
-function JobPostForm({ editing, missing, onDone }: FormProps) {
-  const [draft, setDraft] = useState<VacancyDraft>(() => toDraft(editing))
+function JobPostForm({ editing, order, missing, onDone, onApproved }: FormProps) {
+  const [draft, setDraft] = useState<VacancyDraft>(() => (order ? jobOrderToDraft(order) : toDraft(editing)))
+  const approving = Boolean(order)
+  const canApprove = order ? reviewState(order) === 'awaiting-review' : false
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof VacancyDraft>(key: K, value: VacancyDraft[K]) => setDraft((current) => ({ ...current, [key]: value }))
@@ -104,7 +126,10 @@ function JobPostForm({ editing, missing, onDone }: FormProps) {
 
     setSaving(true)
     try {
-      if (editing) {
+      if (order) {
+        await reviewJobOrder(order.id, { decision: 'approve', vacancy: payload })
+        await onApproved(`Approved. “${payload.title}” is now live on the careers page.`)
+      } else if (editing) {
         await updateRecruiterVacancy(editing.id, payload)
         onDone(`“${payload.title}” was updated.`)
       } else {
@@ -121,11 +146,21 @@ function JobPostForm({ editing, missing, onDone }: FormProps) {
     <div className="admin-page">
       <div className="admin-page__heading">
         <div>
-          <h1>{editing ? 'Edit job post' : 'New job post'}</h1>
-          <p>{editing ? 'Changes go live on the careers page as soon as you save.' : 'Published job posts appear on the careers page straight away.'}</p>
+          <h1>{approving ? 'Approve & publish advert' : editing ? 'Edit job post' : 'New job post'}</h1>
+          <p>{approving
+            ? `From ${String(order?.details?.legalName ?? 'the employer')}'s job order ${order ? jobOrderReference(order.id) : ''}. Complete the region, industry and category, check the wording, then publish.`
+            : editing ? 'Changes go live on the careers page as soon as you save.' : 'Published job posts appear on the careers page straight away.'}</p>
         </div>
-        <Link className="admin__button" to="/admin"><FiArrowLeft aria-hidden="true" /> Back to inventory</Link>
+        {approving
+          ? <Link className="admin__button" to="/admin/review"><FiArrowLeft aria-hidden="true" /> Back to advert review</Link>
+          : <Link className="admin__button" to="/admin"><FiArrowLeft aria-hidden="true" /> Back to inventory</Link>}
       </div>
+
+      {approving && !canApprove && (
+        <p className="staff-access-error" role="alert">
+          This job order is not waiting for review (it may be unpaid or already reviewed), so it cannot be approved here.
+        </p>
+      )}
 
       {missing && (
         <p className="staff-access-error" role="alert">
@@ -221,9 +256,9 @@ function JobPostForm({ editing, missing, onDone }: FormProps) {
             {error && <p className="staff-access-error" role="alert">{error}</p>}
 
             <div className="admin-form-actions">
-              <Link className="admin__button" to="/admin">Cancel</Link>
-              <button className="staff-access-submit" type="submit" disabled={saving} aria-busy={saving}>
-                {saving ? <Spinner label="Saving…" size="sm" tone="light" /> : editing ? 'Save changes' : 'Publish job post'}
+              <Link className="admin__button" to={approving ? '/admin/review' : '/admin'}>Cancel</Link>
+              <button className="staff-access-submit" type="submit" disabled={saving || (approving && !canApprove)} aria-busy={saving}>
+                {saving ? <Spinner label={approving ? 'Publishing…' : 'Saving…'} size="sm" tone="light" /> : approving ? 'Approve & publish' : editing ? 'Save changes' : 'Publish job post'}
               </button>
             </div>
           </form>

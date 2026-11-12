@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { FiAlertTriangle } from 'react-icons/fi'
+import { FiAlertTriangle, FiEdit3 } from 'react-icons/fi'
 import Spinner from '../components/ui/Spinner'
 
 type Props = {
@@ -9,6 +9,10 @@ type Props = {
   confirmLabel: string
   busyLabel?: string
   busy?: boolean
+  /** 'danger' for destructive actions (red), 'neutral' for everyday decisions. */
+  tone?: 'danger' | 'neutral'
+  /** Disable the confirm button, e.g. until a required reason is typed. */
+  confirmDisabled?: boolean
   error?: string
   onConfirm: () => void
   onCancel: () => void
@@ -20,7 +24,7 @@ type Props = {
  * on "Cancel" so pressing Enter by accident never deletes anything.
  */
 export default function ConfirmDialog({
-  open, title, children, confirmLabel, busyLabel = 'Working…', busy = false, error = '', onConfirm, onCancel,
+  open, title, children, confirmLabel, busyLabel = 'Working…', busy = false, tone = 'danger', confirmDisabled = false, error = '', onConfirm, onCancel,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -39,7 +43,7 @@ export default function ConfirmDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="confirm-dialog"
+      className={`confirm-dialog confirm-dialog--${tone}`}
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-body"
       onCancel={(event) => {
@@ -53,7 +57,7 @@ export default function ConfirmDialog({
       }}
     >
       <div className="confirm-dialog__panel">
-        <span className="confirm-dialog__icon" aria-hidden="true"><FiAlertTriangle /></span>
+        <span className="confirm-dialog__icon" aria-hidden="true">{tone === 'danger' ? <FiAlertTriangle /> : <FiEdit3 />}</span>
         <h2 id="confirm-dialog-title">{title}</h2>
         <div id="confirm-dialog-body" className="confirm-dialog__body">{children}</div>
         {error && <p className="staff-access-error" role="alert">{error}</p>}
@@ -61,7 +65,7 @@ export default function ConfirmDialog({
           <button ref={cancelRef} type="button" className="admin__button" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className="confirm-dialog__confirm" onClick={onConfirm} disabled={busy} aria-busy={busy}>
+          <button type="button" className="confirm-dialog__confirm" onClick={onConfirm} disabled={busy || confirmDisabled} aria-busy={busy}>
             {busy ? <Spinner label={busyLabel} size="sm" tone="light" /> : confirmLabel}
           </button>
         </div>

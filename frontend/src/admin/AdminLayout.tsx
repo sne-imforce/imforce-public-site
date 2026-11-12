@@ -1,24 +1,27 @@
-import { useCallback, useEffect, useState } from 'react'
-import { FiActivity, FiGrid, FiHome, FiLogOut, FiPlusSquare } from 'react-icons/fi'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { FiActivity, FiBell, FiCheckSquare, FiGrid, FiHome, FiLogOut, FiPlusSquare } from 'react-icons/fi'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import {
   getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired,
   forgetStaffDevice, saveStaffToken, staffLogout, type StaffInquiry, type StaffSession,
 } from '../data/api'
-import { loadStaffVacancies } from '../data/recruiterVacancies'
+import { loadStaffVacancies, useRecruiterVacancies } from '../data/recruiterVacancies'
 import AdminLogin from './AdminLogin'
 import { LoadingBlock } from '../components/ui/Spinner'
 import type { AdminContext } from './adminContext'
+import { buildNotifications, getNotificationsSeenAt, reviewState } from './jobOrders'
 import '../components/public/StaffAccessModal.css'
 import './admin.css'
 
 const idleTimeoutMs = 15 * 60 * 1000
 
 const tabs = [
-  { to: '/admin', label: 'Inventory', icon: FiGrid, end: true },
-  { to: '/admin/jobs', label: 'Job posts', icon: FiPlusSquare, end: false },
-  { to: '/admin/audit', label: 'Audit log', icon: FiActivity, end: false },
-]
+  { to: '/admin', label: 'Inventory', icon: FiGrid, end: true, badge: null },
+  { to: '/admin/review', label: 'Advert review', icon: FiCheckSquare, end: false, badge: 'review' },
+  { to: '/admin/jobs', label: 'Job posts', icon: FiPlusSquare, end: false, badge: null },
+  { to: '/admin/notifications', label: 'Notifications', icon: FiBell, end: false, badge: 'notifications' },
+  { to: '/admin/audit', label: 'Audit log', icon: FiActivity, end: false, badge: null },
+] as const
 
 /** Signed-in shell for /admin: header, tab navigation and shared data. */
 export default function AdminLayout() {
@@ -30,6 +33,19 @@ export default function AdminLayout() {
   const [inquiriesError, setInquiriesError] = useState('')
   const [snackbar, setSnackbar] = useState('')
   const [deviceRemembered, setDeviceRemembered] = useState(false)
+  const [staffUsername, setStaffUsername] = useState('')
+  const [notificationsSeenAt, setNotificationsSeenAt] = useState(0)
+  const [badgeNow] = useState(() => Date.now())
+  const vacancies = useRecruiterVacancies()
+  const rememberStaff = useCallback((username: string) => {
+    setStaffUsername(username)
+    setNotificationsSeenAt(getNotificationsSeenAt(username))
+  }, [])
+  const onNotificationsSeen = useCallback(() => setNotificationsSeenAt(getNotificationsSeenAt(staffUsername)), [staffUsername])
+  const badges = useMemo(() => ({
+    review: inquiries.filter((item) => item.kind === 'employer' && reviewState(item) === 'awaiting-review').length,
+    notifications: buildNotifications(inquiries, vacancies, badgeNow).filter((item) => item.at > notificationsSeenAt).length,
+  }), [inquiries, vacancies, badgeNow, notificationsSeenAt])
 
   const reloadInquiries = useCallback(async () => {
     setInquiriesError('')
@@ -51,14 +67,15 @@ export default function AdminLayout() {
     if (!getStaffToken()) return
     void getStaffIdentity()
       .then(async (identity) => {
-        await loadStaffVacancies()
+        // Load the data before showing the screens, so deep links (e.g. to one job order) resolve.
+        await Promise.all([loadStaffVacancies(), reloadInquiries()])
         setStaffName(identity.displayName || identity.email)
         setDeviceRemembered(Boolean(identity.deviceRemembered))
-        await reloadInquiries()
+        rememberStaff(identity.username || identity.email)
       })
       .catch(() => saveStaffToken(null))
       .finally(() => setChecking(false))
-  }, [reloadInquiries])
+  }, [reloadInquiries, rememberStaff])
 
   useEffect(() => onStaffSessionExpired(() => resetAccess('Your session has expired. Sign in again to continue.')), [resetAccess])
 
@@ -93,11 +110,11 @@ export default function AdminLayout() {
 
   const handleSignedIn = async (session: StaffSession) => {
     saveStaffToken(session.accessToken, session.expiresIn)
-    await loadStaffVacancies()
+    await Promise.all([loadStaffVacancies(), reloadInquiries()])
     setNotice('')
     setStaffName(session.displayName || session.email)
     setDeviceRemembered(Boolean(session.deviceRemembered))
-    await reloadInquiries()
+    rememberStaff(session.username || session.email)
   }
 
   const forgetDevice = async () => {
@@ -130,7 +147,7 @@ export default function AdminLayout() {
     )
   }
 
-  const context: AdminContext = { staffName, inquiries, inquiriesError, reloadInquiries, notify: setSnackbar }
+  const context: AdminContext = { staffName, staffUsername, onNotificationsSeen, inquiries, inquiriesError, reloadInquiries, notify: setSnackbar }
 
   return (
     <main className="staff-access-page admin">
@@ -155,11 +172,17 @@ export default function AdminLayout() {
         </header>
 
         <nav className="admin__tabs" aria-label="Staff workspace">
-          {tabs.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end} className={({ isActive }) => `admin__tab${isActive ? ' is-active' : ''}`}>
-              <Icon aria-hidden="true" /> {label}
-            </NavLink>
-          ))}
+          {tabs.map(({ to, label, icon: Icon, end, badge }) => {
+            const count = badge ? badges[badge] : 0
+            return (
+              <NavLink key={to} to={to} end={end} className={({ isActive }) => `admin__tab${isActive ? ' is-active' : ''}`}>
+                <Icon aria-hidden="true" /> {label}
+                {count > 0 && (
+                  <span className="admin__tab-badge" aria-label={badge === 'review' ? `${count} awaiting review` : `${count} new`}>{count > 99 ? '99+' : count}</span>
+                )}
+              </NavLink>
+            )
+          })}
         </nav>
 
         <Outlet context={context} />

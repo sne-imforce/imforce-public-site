@@ -1,40 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FiEdit3, FiPlus, FiRefreshCw, FiTrash2 } from 'react-icons/fi'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { StaffInquiry } from '../data/api'
 import { deleteRecruiterVacancy, useRecruiterVacancies, type RecruiterVacancy } from '../data/recruiterVacancies'
 import { formatDateDmy } from '../utils/dates'
 import ConfirmDialog from './ConfirmDialog'
 import DataTable, { type Column, type Filter } from './DataTable'
+import EnquiryDetails from './EnquiryDetails'
+import { addDays, dateInSouthAfrica, enquiryReference, isLiveVacancy, paymentState, reviewBadge, reviewState, time, type PaymentState, type ReviewState } from './jobOrders'
 import { useAdmin } from './adminContext'
-
-const dateInSouthAfrica = (epochMs: number) => new Date(epochMs + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
-const addDays = (isoDate: string, days: number) => new Date(Date.parse(`${isoDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
-const time = (value: string | null | undefined) => (value ? Date.parse(value) || 0 : 0)
-
-const hiddenInquiryFields = new Set(['authorizedContact', 'paymentStatus', 'paymentAmountMinor', 'paymentCurrency', 'paystackTransactionId'])
-// Only build a mailto: link from a plain, single address (no header injection).
-const isSafeEmail = (value: string) => /^[^\s@<>"?&,;:]+@[^\s@<>"?&,;:]+\.[^\s@<>"?&,;:]+$/.test(value) && value.length <= 254
-
-function humanizeField(key: string) {
-  const words = key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-
-// Same short reference the visitor sees after sending the contact form.
-const enquiryReference = (id: string) => `ENQ-${id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-
-type PaymentState = 'paid' | 'pending' | 'failed'
-function paymentState(status: unknown): PaymentState {
-  if (status === 'paid') return 'paid'
-  if (status === 'initialization_failed') return 'failed'
-  return 'pending'
-}
-const paymentBadge: Record<PaymentState, { text: string; tone: string }> = {
-  paid: { text: 'Paid', tone: 'success' },
-  pending: { text: 'Awaiting payment', tone: 'warning' },
-  failed: { text: 'Checkout failed', tone: 'danger' },
-}
 
 type EnquiryRow = {
   id: string
@@ -44,6 +18,7 @@ type EnquiryRow = {
   email: string
   subject: string
   payment: PaymentState | null
+  review: ReviewState | null
   source: StaffInquiry
 }
 
@@ -58,48 +33,30 @@ function toEnquiryRow(inquiry: StaffInquiry): EnquiryRow {
     email: isContact ? inquiry.email ?? '' : String(details.email ?? ''),
     subject: isContact ? inquiry.subject ?? 'Contact enquiry' : String(details.jobTitle ?? 'Job order'),
     payment: isContact ? null : paymentState(details.paymentStatus),
+    review: isContact ? null : reviewState(inquiry),
     source: inquiry,
   }
 }
 
-function EnquiryDetails({ row }: { row: EnquiryRow }) {
-  const inquiry = row.source
-  const details = inquiry.details ?? {}
-  return (
-    <div className="admin-details">
-      <dl className="staff-enquiry__details">
-        {row.kind === 'contact' ? (
-          <>
-            <div><dt>Reference</dt><dd>{enquiryReference(inquiry.id)}</dd></div>
-            {inquiry.name && <div><dt>Name</dt><dd>{inquiry.name}</dd></div>}
-            {inquiry.phone && <div><dt>Phone</dt><dd>{inquiry.phone}</dd></div>}
-            {inquiry.enquiry_type && <div><dt>Enquiry type</dt><dd>{inquiry.enquiry_type}</dd></div>}
-            <div className="staff-enquiry__wide"><dt>Message</dt><dd>{inquiry.message}</dd></div>
-          </>
-        ) : (
-          Object.entries(details).filter(([key]) => !hiddenInquiryFields.has(key)).map(([key, value]) => (
-            <div key={key} className={String(value).length > 80 ? 'staff-enquiry__wide' : undefined}>
-              <dt>{humanizeField(key)}</dt><dd>{String(value)}</dd>
-            </div>
-          ))
-        )}
-      </dl>
-      {isSafeEmail(row.email) && <a className="staff-enquiry__reply" href={`mailto:${row.email}`}>Reply by email</a>}
-    </div>
-  )
-}
 
 /** /admin — overview of everything the team manages. */
 export default function InventoryPage() {
   const { inquiries, inquiriesError, reloadInquiries, notify } = useAdmin()
   const vacancies = useRecruiterVacancies()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const linkedEnquiry = searchParams.get('enquiry') ?? ''
+  // Arriving from a notification: bring the enquiries table into view.
+  useEffect(() => {
+    if (linkedEnquiry) document.getElementById('inventory-enquiries')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [linkedEnquiry])
   // Captured once per visit so the figures stay stable while the page is open.
   const [now] = useState(() => Date.now())
   const today = dateInSouthAfrica(now)
-  const isLive = (vacancy: RecruiterVacancy) => !vacancy.closingDate || vacancy.closingDate >= today
+  const isLive = (vacancy: RecruiterVacancy) => isLiveVacancy(vacancy, today)
 
   const enquiryRows = useMemo(() => inquiries.map(toEnquiryRow), [inquiries])
+  const linkedEnquiryRow = linkedEnquiry ? enquiryRows.find((row) => row.kind === 'contact' && row.source.id === linkedEnquiry) : undefined
 
   const stats = useMemo(() => {
     const live = vacancies.filter((vacancy) => !vacancy.closingDate || vacancy.closingDate >= today)
@@ -110,7 +67,8 @@ export default function InventoryPage() {
       { label: 'Urgent', value: live.filter((vacancy) => vacancy.isUrgent).length },
       { label: 'Closing within 7 days', value: live.filter((vacancy) => vacancy.closingDate && vacancy.closingDate <= weekAhead).length },
       { label: 'Enquiries (30 days)', value: enquiryRows.filter((row) => time(row.received) >= monthAgo).length },
-      { label: 'Job orders awaiting payment', value: enquiryRows.filter((row) => row.payment === 'pending').length },
+      { label: 'Adverts awaiting review', value: enquiryRows.filter((row) => row.review === 'awaiting-review').length },
+      { label: 'Job orders awaiting payment', value: enquiryRows.filter((row) => row.review === 'awaiting-payment').length },
     ]
   }, [vacancies, enquiryRows, today, now])
 
@@ -174,16 +132,16 @@ export default function InventoryPage() {
     { key: 'from', header: 'From', sortValue: (row) => row.from || row.email, render: (row) => <><strong className="admin-cell__title">{row.from || '—'}</strong><span className="admin-cell__sub">{row.email}</span></> },
     { key: 'subject', header: 'Subject / role', sortValue: (row) => row.subject, render: (row) => row.subject },
     {
-      key: 'payment', header: 'Payment', sortValue: (row) => row.payment ?? 'z',
-      render: (row) => (row.payment
-        ? <span className={`admin-badge admin-badge--${paymentBadge[row.payment].tone}`}>{paymentBadge[row.payment].text}</span>
-        : <span className="admin-cell__sub">Not applicable</span>),
+      key: 'status', header: 'Status', sortValue: (row) => row.review ?? 'z',
+      render: (row) => (row.review
+        ? <span className={`admin-badge admin-badge--${reviewBadge[row.review].tone}`}>{reviewBadge[row.review].text}</span>
+        : <span className="admin-cell__sub">Contact enquiry</span>),
     },
   ]
 
   const enquiryFilters: Array<Filter<EnquiryRow>> = [
     { id: 'kind', label: 'Type', options: [{ value: 'contact', label: 'Contact' }, { value: 'employer', label: 'Job order' }], matches: (row, value) => row.kind === value },
-    { id: 'payment', label: 'Payment', options: [{ value: 'paid', label: 'Paid' }, { value: 'pending', label: 'Awaiting payment' }, { value: 'failed', label: 'Checkout failed' }], matches: (row, value) => row.payment === value },
+    { id: 'status', label: 'Status', options: (Object.keys(reviewBadge) as ReviewState[]).map((value) => ({ value, label: reviewBadge[value].text })), matches: (row, value) => row.review === value },
   ]
 
   return (
@@ -244,10 +202,13 @@ export default function InventoryPage() {
           rowId={(row) => row.id}
           searchText={(row) => [row.from, row.email, row.subject, row.source.message, row.source.phone, row.kind === 'contact' ? enquiryReference(row.source.id) : ''].join(' ')}
           searchPlaceholder="Search name, email, subject, reference…"
+          key={linkedEnquiry ? `${linkedEnquiry}:${linkedEnquiryRow ? 'found' : 'loading'}` : 'all'}
+          initialQuery={linkedEnquiryRow ? enquiryReference(linkedEnquiryRow.source.id) : ''}
+          initialExpandedId={linkedEnquiryRow?.id}
           filters={enquiryFilters}
           initialSort={{ key: 'received', direction: 'desc' }}
           emptyMessage="No enquiries have been received yet."
-          renderDetails={(row) => <EnquiryDetails row={row} />}
+          renderDetails={(row) => <EnquiryDetails inquiry={row.source} />}
         />
       </section>
 

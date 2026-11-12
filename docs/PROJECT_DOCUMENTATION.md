@@ -228,7 +228,9 @@ sequenceDiagram
 | `/contact` | Contact | `?subject=` prefill; hidden bot-trap field. After sending, the form is replaced by a confirmation with the visitor's name, reply email, an `ENQ-XXXXXXXX` reference (staff can search for it in the inventory), "what happens next", next-step links matched to the enquiry type, and the phone number. Failures show a red alert with a phone fallback and keep the typed message. |
 | `/privacy` | Privacy notice (POPIA) | Linked from the footer and both forms |
 | `/admin` | Staff sign-in (password + authenticator code), then **Inventory**: summary tiles, Job posts table, Enquiries table | `noindex` (all `/admin/*`); idle sign-out after 15 minutes |
+| `/admin/review` | **Advert review**: employer job orders with payment and review status, queue opens on *Awaiting review*. Approve & publish opens the job post form pre-filled from the order (`/admin/jobs?order=<id>`); request changes or reject require a reason; reviewed orders can be moved back to review. Unpaid orders cannot be approved. | Staff only; tab badge = adverts awaiting review |
 | `/admin/jobs` | **Job posts** subscreen: new post, or edit with `?edit=<id>`; live preview | Staff only |
+| `/admin/notifications` | **Notifications**: adverts awaiting review, urgent hires, enquiries from the last 14 days, and reminders (vacancies closing within 3 days or closed in the last 7, job orders unpaid after 2 days, requested changes with no update after 5 days). Filter chips, 10 per page, *New* since the last visit (remembered per staff member in the browser), links straight to the item. | Staff only; tab badge = new items |
 | `/admin/audit` | **Audit log** subscreen | Staff only |
 | `*` | Falls back to Home | |
 
@@ -238,7 +240,7 @@ sequenceDiagram
 - Buttons show a busy state with a small spinner while a request is in flight, which prevents double submission. Areas whose content is still loading (home and careers vacancies, staff workspace, audit log, payment confirmation after Paystack) show the shared `Spinner` / `LoadingBlock` component (`components/ui/Spinner.tsx`), which screen readers announce and which pulses instead of spinning for people who prefer reduced motion.
 - Error messages are written for end users ("Check your internet connection…") and never contain technical details.
 - The `/admin` link is a small gear icon in the footer, kept out of the main navigation.
-- Staff workspace tables (job posts, enquiries, audit log) share one `DataTable` component: a search box, a filter for each useful column, sortable column headers (with `aria-sort`), and 10 rows per page with ‹ › buttons and a "Showing 11–20 of 47" count. Enquiry rows expand to show full details and a reply link. Deleting a job post asks for confirmation in a modal that names the vacancy; focus starts on Cancel, Escape or Cancel deletes nothing, and a failed delete shows its error inside the modal. Native browser `confirm()` boxes are not used. Below 760 px wide, each row becomes a labelled card, so nothing is squeezed.
+- Staff workspace tables (job posts, enquiries, advert review, audit log) share one `DataTable` component: a search box, a filter for each useful column, sortable column headers (with `aria-sort`), and 10 rows per page with ‹ › buttons and a "Showing 11–20 of 47" count. Enquiry rows expand to show full details and a reply link. Deleting a job post asks for confirmation in a modal that names the vacancy; focus starts on Cancel, Escape or Cancel deletes nothing, and a failed delete shows its error inside the modal. Native browser `confirm()` boxes are not used. Below 760 px wide, each row becomes a labelled card, so nothing is squeezed.
 - Accessibility: every page passes an automated axe-core audit (WCAG 2.1 AA and best practices) on desktop and mobile. Accent text uses `--color-accent-text` (#296fb0), which meets 4.5:1 contrast on all light backgrounds; keep using it for text instead of `--color-accent`.
 
 ### Frontend security controls
@@ -280,6 +282,7 @@ Every staff response is sent with `Cache-Control: no-store`.
 | `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code, rememberDevice?}` (6 digits). With `rememberDevice: true` it sets an HttpOnly, `SameSite=Strict` cookie (`Path=/api/staff`, 30 days) so that browser needs only the password next time → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
 | `POST /api/staff/devices/forget` | Stop remembering this browser (`{}`) or every browser for the account (`{"scope":"all"}`) | 60 |
+| `POST /api/staff/job-orders/:id/review` | `{decision: 'approve'\|'changes'\|'reject'\|'reopen', reason?, vacancy?}`. Approve needs a paid order and a valid job post (published in the same step); changes/reject need a 5–1,000 character reason. Records the reviewer, time and reason; guarded against two staff reviewing at once; a failed publish returns the order to the queue. | 60 |
 | `GET /api/staff/audit` | Latest 500 staff audit log entries (searched and paged in the browser) | 60 |
 | `GET /api/staff/me` | Current agent: `{email, displayName, username}` | 60 |
 | `GET /api/staff/vacancies` | All vacancies, including client names | 60 |

@@ -3,6 +3,8 @@ import AdminLayout from './admin/AdminLayout'
 import AuditLogPage from './admin/AuditLogPage'
 import InventoryPage from './admin/InventoryPage'
 import JobPostsPage from './admin/JobPostsPage'
+import NotificationsPage from './admin/NotificationsPage'
+import ReviewPage from './admin/ReviewPage'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Footer from './components/public/Footer'
 import Seo from './components/seo/Seo'
@@ -179,7 +181,9 @@ function AppContent() {
         <Route path="/careers" element={<Careers />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<InventoryPage />} />
+          <Route path="review" element={<ReviewPage />} />
           <Route path="jobs" element={<JobPostsPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
           <Route path="audit" element={<AuditLogPage />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>

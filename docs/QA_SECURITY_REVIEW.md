@@ -63,6 +63,19 @@ Staff now sign in with a **username** instead of their email, and the workspace 
 - **Contact confirmation:** a bold, personal confirmation panel with a reference number and next steps, and a distinct red error alert with a phone fallback.
 - **Loading spinners:** accessible spinners replace blank areas while content loads, plus inline spinners in busy buttons.
 
+### Round 6 (12 November 2026): advert review and notifications
+
+- **Advert review** implements scope §6, "Payment does not publish an advert automatically":
+  - Paid employer job orders wait for a staff member to approve and publish them, request changes or reject them, with the reviewer, time and reason recorded.
+  - The server refuses to approve unpaid orders, prevents double approval, and returns an order to the queue if publishing fails.
+- **Notifications** gathers adverts awaiting review, urgent hires, new enquiries and follow-up reminders, with tab badges.
+- **Defects found and fixed during testing, before release:**
+  - The authenticator QR code was not shown with real Supabase, which returns raw SVG. Now verified by decoding the rendered QR code.
+  - Two staff-workspace links could open the wrong item if short references ever collided. Links now carry the full ID.
+  - Links opened on a fresh page load didn't open the linked item, because data loaded after the screen.
+  - A text-splitting regex would have broken the whole site on older iPhones (Safari < 16.4) and was replaced before shipping.
+  - Five tabs overflowed phone screens; they now wrap into two rows.
+
 ---
 
 ## 2. Findings and remediation
@@ -182,10 +195,11 @@ All results were reproduced in the final QA pass. Commands:
 
 | Layer | Command | Result |
 |---|---|---|
-| API and security unit/integration | `cd backend && npm test` | **60 / 60 passed** (including 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
-| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **44 / 44 passed**; migrations 001–007 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
+| API and security unit/integration | `cd backend && npm test` | **69 / 69 passed** (including 9 advert-review, 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
+| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **47 / 47 passed**; migrations 001–008 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
 | Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **86 / 86 passed** |
 | Loading states (API deliberately slowed) | `node qa/e2e-loading.cjs` | **9 / 9 passed** |
+| Advert review and notifications | `node qa/e2e-review.cjs` | **33 / 33 passed**: queue, request changes, approve & publish (pre-filled), unpaid refused, reopen, notifications feed, filters, new/seen, deep links, reference collisions, phone layout; axe 0 violations |
 | Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **45 / 45 passed**: agent name in header, tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
 | Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |
 | Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |

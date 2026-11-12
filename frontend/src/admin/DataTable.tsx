@@ -28,6 +28,12 @@ type Props<Row> = {
   searchPlaceholder?: string
   filters?: Array<Filter<Row>>
   initialSort: { key: string; direction: 'asc' | 'desc' }
+  /** Starting filter values, e.g. { status: 'awaiting' }. */
+  initialFilters?: Record<string, string>
+  /** Starting search text, e.g. from a link. */
+  initialQuery?: string
+  /** Row to open on first render (e.g. when arriving from a notification). */
+  initialExpandedId?: string
   pageSize?: number
   emptyMessage: string
   /** Optional extra content shown when a row is expanded. */
@@ -45,13 +51,13 @@ const compare = (a: string | number, b: string | number) =>
  */
 export default function DataTable<Row>({
   label, rows, columns, rowId, searchText, searchPlaceholder = 'Search…', filters = [],
-  initialSort, pageSize = 10, emptyMessage, renderDetails, renderActions,
+  initialSort, initialFilters = {}, initialQuery = '', initialExpandedId, pageSize = 10, emptyMessage, renderDetails, renderActions,
 }: Props<Row>) {
-  const [query, setQuery] = useState('')
-  const [filterValues, setFilterValues] = useState<Record<string, string>>({})
+  const [query, setQuery] = useState(initialQuery)
+  const [filterValues, setFilterValues] = useState<Record<string, string>>(initialFilters)
   const [sort, setSort] = useState(initialSort)
   const [page, setPage] = useState(0)
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(initialExpandedId ?? null)
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
