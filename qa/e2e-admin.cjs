@@ -52,6 +52,7 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
   const errors = []; page.on('pageerror', (e) => errors.push(String(e))); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
   await setup(page, state)
   ok('tabs: Inventory, Advert review, Job posts, Notifications, Audit log + Home + Sign out', await page.locator('.admin__tab').count() === 5 && await page.locator('.admin__header').getByRole('link', { name: 'Home' }).isVisible() && await page.getByRole('button', { name: 'Sign out' }).isVisible())
+  ok('after sign-in at /admin, the Inventory opens at /admin/inventory', page.url().endsWith('/admin/inventory'))
   ok('Inventory tab is active', (await page.locator('.admin__tab.is-active').textContent()).includes('Inventory'))
   ok('header shows the agent name', (await page.locator('.admin__signed-in').innerText()).trim() === 'Signed in as Thandi Mokoena')
   ok('summary tiles shown', await page.locator('.admin-stats li').count() === 6, (await page.locator('.admin-stats').innerText()).replace(/\n/g, ' '))
@@ -145,7 +146,7 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
   await page.getByRole('button', { name: 'Clear' }).click()
   
   await page.goto((process.env.E2E_BASE_URL || 'http://localhost:4173') + '/admin/nonsense'); await page.getByRole('heading', { name: 'Inventory' }).waitFor()
-  ok('unknown /admin/* path redirects to inventory', page.url().endsWith('/admin'))
+  ok('unknown /admin/* path redirects to /admin/inventory', page.url().endsWith('/admin/inventory'))
   ok('admin subpages are noindex', (await page.locator('meta[name=robots]').getAttribute('content')).startsWith('noindex'))
   await page.goto((process.env.E2E_BASE_URL || 'http://localhost:4173') + '/admin/audit'); await page.getByRole('heading', { name: 'Audit log' }).waitFor()
   ok('deep link to /admin/audit works after refresh', (await page.locator('meta[name=robots]').getAttribute('content')).startsWith('noindex'))

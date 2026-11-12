@@ -16,7 +16,7 @@ import './admin.css'
 const idleTimeoutMs = 15 * 60 * 1000
 
 const tabs = [
-  { to: '/admin', label: 'Inventory', icon: FiGrid, end: true, badge: null },
+  { to: '/admin/inventory', label: 'Inventory', icon: FiGrid, end: false, badge: null },
   { to: '/admin/review', label: 'Advert review', icon: FiCheckSquare, end: false, badge: 'review' },
   { to: '/admin/jobs', label: 'Job posts', icon: FiPlusSquare, end: false, badge: null },
   { to: '/admin/notifications', label: 'Notifications', icon: FiBell, end: false, badge: 'notifications' },

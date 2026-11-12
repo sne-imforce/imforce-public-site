@@ -119,7 +119,7 @@ export function buildNotifications(inquiries: StaffInquiry[], vacancies: Recruit
       id: `enquiry-${enquiry.id}`, kind: 'enquiry',
       title: `New enquiry from ${enquiry.name || enquiry.email || 'a visitor'}`,
       detail: `${enquiry.enquiry_type ? `${enquiry.enquiry_type}: ` : ''}${enquiry.subject ?? ''} · ${reference}`,
-      at: received, link: { to: `/admin?enquiry=${encodeURIComponent(enquiry.id)}`, label: 'View' },
+      at: received, link: { to: `/admin/inventory?enquiry=${encodeURIComponent(enquiry.id)}`, label: 'View' },
     })
   }
 

@@ -71,7 +71,7 @@ export default function JobPostsPage() {
       editing={editing}
       order={order}
       missing={Boolean((editingId && !editing) || (orderId && !order))}
-      onDone={(message) => { notify(message); navigate('/admin') }}
+      onDone={(message) => { notify(message); navigate('/admin/inventory') }}
       onApproved={async (message) => { await Promise.all([reloadInquiries(), loadStaffVacancies()]); notify(message); navigate('/admin/review') }}
     />
   )
@@ -153,7 +153,7 @@ function JobPostForm({ editing, order, missing, onDone, onApproved }: FormProps)
         </div>
         {approving
           ? <Link className="admin__button" to="/admin/review"><FiArrowLeft aria-hidden="true" /> Back to advert review</Link>
-          : <Link className="admin__button" to="/admin"><FiArrowLeft aria-hidden="true" /> Back to inventory</Link>}
+          : <Link className="admin__button" to="/admin/inventory"><FiArrowLeft aria-hidden="true" /> Back to inventory</Link>}
       </div>
 
       {approving && !canApprove && (
@@ -256,7 +256,7 @@ function JobPostForm({ editing, order, missing, onDone, onApproved }: FormProps)
             {error && <p className="staff-access-error" role="alert">{error}</p>}
 
             <div className="admin-form-actions">
-              <Link className="admin__button" to={approving ? '/admin/review' : '/admin'}>Cancel</Link>
+              <Link className="admin__button" to={approving ? '/admin/review' : '/admin/inventory'}>Cancel</Link>
               <button className="staff-access-submit" type="submit" disabled={saving || (approving && !canApprove)} aria-busy={saving}>
                 {saving ? <Spinner label={approving ? 'Publishing…' : 'Saving…'} size="sm" tone="light" /> : approving ? 'Approve & publish' : editing ? 'Save changes' : 'Publish job post'}
               </button>

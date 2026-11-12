@@ -161,6 +161,12 @@ const routeSeo = {
   },
 } as const
 
+// /admin opens the Inventory; keep any ?query so older links still open the right item.
+function ToInventory() {
+  const { search } = useLocation()
+  return <Navigate to={`/admin/inventory${search}`} replace />
+}
+
 function AppContent() {
   const location = useLocation()
   // Every staff workspace screen (/admin, /admin/jobs, /admin/audit) is noindex.
@@ -180,12 +186,13 @@ function AppContent() {
         <Route path="/about" element={<About />} />
         <Route path="/careers" element={<Careers />} />
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<InventoryPage />} />
+          <Route index element={<ToInventory />} />
+          <Route path="inventory" element={<InventoryPage />} />
           <Route path="review" element={<ReviewPage />} />
           <Route path="jobs" element={<JobPostsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="audit" element={<AuditLogPage />} />
-          <Route path="*" element={<Navigate to="/admin" replace />} />
+          <Route path="*" element={<Navigate to="/admin/inventory" replace />} />
         </Route>
         <Route path="/contact" element={<Contact />} />
         <Route path="/employers" element={<Employers />} />

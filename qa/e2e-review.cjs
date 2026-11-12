@@ -162,7 +162,7 @@ const bodyRows = (page) => page.locator('tbody tr:not(.data-table__details-row):
   ok('returning shows nothing new', await page.locator('.notice.is-new').count() === 0 && await page.getByText('You’re up to date.').isVisible())
   await page.locator('.notice', { hasText: 'New enquiry from Lerato Nkosi' }).getByRole('link', { name: 'View' }).click()
   await page.getByRole('heading', { name: 'Inventory' }).waitFor(); await page.waitForTimeout(400)
-  ok('an enquiry notification opens that enquiry in the inventory', page.url().includes(`/admin?enquiry=${id(20)}`) && await page.locator('section[aria-labelledby="inventory-enquiries"] .data-table__details-row').getByText('Looking for accounting work').count() >= 0 && await page.locator('section[aria-labelledby="inventory-enquiries"] .data-table__details-row').isVisible())
+  ok('an enquiry notification opens that enquiry in the inventory', page.url().includes(`/admin/inventory?enquiry=${id(20)}`) && await page.locator('section[aria-labelledby="inventory-enquiries"] .data-table__details-row').getByText('Looking for accounting work').count() >= 0 && await page.locator('section[aria-labelledby="inventory-enquiries"] .data-table__details-row').isVisible())
   { // Two orders whose short references collide must still link to the right one.
     const twin = order(30, 'Twin Role A', 'Twin Co A', 'paid'); const twin2 = order(31, 'Twin Role B', 'Twin Co B', 'paid')
     twin.id = 'bbbbbbbb-0000-4000-8000-000000000030'; twin2.id = 'bbbbbbbb-0000-4000-8000-000000000031'
@@ -180,6 +180,8 @@ const bodyRows = (page) => page.locator('tbody tr:not(.data-table__details-row):
     for (const text of Object.keys(tones)) { const value = await colour(text); if (value === plain || value === 'rgba(0, 0, 0, 0)') unstyled.push(text) }
     ok('every badge colour (green, amber, blue, red) is styled', unstyled.length === 0, unstyled.join(', '))
   }
+  await page.goto(`${BASE}/admin?enquiry=${id(20)}`); await page.getByRole('heading', { name: 'Inventory' }).waitFor()
+  ok('older /admin?enquiry= links still work (redirect keeps the query)', page.url().includes(`/admin/inventory?enquiry=${id(20)}`))
   ok('no JavaScript errors', errors.length === 0, errors.join(' | '))
 
   // Mobile layout
