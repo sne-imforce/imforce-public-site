@@ -150,3 +150,5 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+# Offline mode data (local testing only)
+backend/dev/.offline-data.json

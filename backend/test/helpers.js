@@ -32,14 +32,14 @@ Object.assign(process.env, {
   PAYSTACK_SECRET_KEY: PAYSTACK_SECRET,
   FRONTEND_ORIGIN: 'http://localhost:5173',
   SECURITY_ALERT_WEBHOOK_URL: ALERT_URL,
-  SECURITY_BLOCK_PRIVATE_IPS: 'true',
-  TRUST_PROXY_HOPS: '1',
+  SECURITY_BLOCK_PRIVATE_IPS: process.env.SECURITY_BLOCK_PRIVATE_IPS ?? 'true',
+  TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS ?? '1',
   // The main suites test password sign-in; mfa.test.js sets this to 'true' first.
   STAFF_MFA_REQUIRED: process.env.STAFF_MFA_REQUIRED ?? 'false',
   // Development email mode: messages are kept in mailer.outbox instead of being sent.
   SMTP_HOST: process.env.SMTP_HOST ?? 'log',
   EMAIL_FROM: 'IMFORCE <admin@imforce.co.za>',
-  PUBLIC_SITE_URL: 'https://www.imforce.co.za',
+  PUBLIC_SITE_URL: process.env.PUBLIC_SITE_URL ?? 'https://www.imforce.co.za',
 })
 
 const realFetch = globalThis.fetch
