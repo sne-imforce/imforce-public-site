@@ -36,7 +36,7 @@ export const verifyPaystackPayment = (reference: string) =>
     method: 'POST', body: JSON.stringify({ reference }),
   })
 export type StaffSession = { accessToken: string; email: string; displayName?: string | null; username?: string | null; deviceRemembered?: boolean; expiresIn?: number }
-export type StaffMfaStep = { step: 'enroll' | 'verify'; ticket: string; factorId: string; qrCode?: string | null; secret?: string | null }
+export type StaffMfaStep = { step: 'enroll' | 'verify'; ticket: string; factorId: string; qrCode?: string | null; secret?: string | null; uri?: string | null }
 export const staffLogin = (username: string, password: string) =>
   request<StaffSession & { mfa?: undefined } | { mfa: StaffMfaStep; accessToken?: undefined }>('/staff/login', {
     method: 'POST', body: JSON.stringify({ username, password }),
@@ -94,7 +94,18 @@ export type StaffInquiry = {
   subject?: string
   message?: string
   details?: Record<string, string | boolean>
+  // Job orders only (migration 008)
+  review_status?: 'pending' | 'approved' | 'changes_requested' | 'rejected'
+  reviewed_by_name?: string | null
+  reviewed_at?: string | null
+  review_reason?: string | null
+  vacancy_id?: string | null
 }
+export type ReviewDecision = 'approve' | 'changes' | 'reject' | 'reopen'
+export const reviewJobOrder = (id: string, body: { decision: ReviewDecision; reason?: string; vacancy?: Partial<Vacancy> }) =>
+  request<{ reviewStatus: string; vacancy: Vacancy | null }>(`/staff/job-orders/${encodeURIComponent(id)}/review`, {
+    method: 'POST', headers: staffHeaders(), body: JSON.stringify(body),
+  })
 export type StaffAuditEntry = {
   occurred_at: string
   actor_email: string | null

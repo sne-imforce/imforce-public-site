@@ -14,8 +14,12 @@ test('first sign-in requires authenticator enrolment; the password alone grants 
   assert.equal(res.status, 200)
   assert.equal(res.data.accessToken, undefined, 'no usable session before the second factor')
   assert.equal(res.data.mfa.step, 'enroll')
-  assert.match(res.data.mfa.qrCode, /^data:image\/svg\+xml/)
+  // Supabase returns raw SVG; the API must turn it into a valid, encoded image URL.
+  assert.match(res.data.mfa.qrCode, /^data:image\/svg\+xml;charset=utf-8,%3C/)
+  assert.ok(decodeURIComponent(res.data.mfa.qrCode.split(',')[1]).includes('<svg'))
+  assert.equal(res.data.mfa.qrCode.includes('#'), false, '# must be encoded or browsers cut the image off')
   assert.ok(res.data.mfa.secret)
+  assert.match(res.data.mfa.uri, /^otpauth:\/\/totp\//)
 
   const withTicket = await call('/api/staff/vacancies', { headers: { Authorization: `Bearer ${res.data.mfa.ticket}` } })
   assert.equal(withTicket.status, 401, 'a password-only (aal1) session is refused by staff routes')

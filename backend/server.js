@@ -277,6 +277,19 @@ function describeDevice(req) {
   return `${browser} on ${system}`
 }
 
+// Supabase's MFA API returns the enrolment QR code as raw SVG markup (its JS
+// client adds the data: prefix itself). Accept both forms and return a safe,
+// URL-encoded data URL for an <img> (SVG in <img> cannot run scripts).
+function qrCodeDataUrl(raw) {
+  if (typeof raw !== 'string' || raw.length > 200_000) return null
+  const value = raw.trim()
+  if (value.startsWith('data:image/svg+xml')) return value
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(value)) return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(value)}`
+  return null
+}
+// otpauth:// link so a staff member setting up on their phone can tap instead of scan.
+const authenticatorUri = (uri) => (typeof uri === 'string' && uri.length < 2000 && uri.startsWith('otpauth://totp/') ? uri : null)
+
 // Reads claims from a token Supabase has already validated (via /auth/v1/user).
 // Never use this on its own to trust a token: it does not check the signature.
 function tokenClaims(token) {
@@ -716,8 +729,7 @@ app.post('/api/staff/login', async (req, res) => {
         key: anonKey, token: ticket, method: 'POST',
         body: { factor_type: 'totp', friendly_name: `IMFORCE staff ${new Date().toISOString().slice(0, 10)} ${crypto.randomUUID().slice(0, 8)}`, issuer: 'IMFORCE' },
       })
-      const qrCode = typeof enrolled?.totp?.qr_code === 'string' && enrolled.totp.qr_code.startsWith('data:image/svg+xml') ? enrolled.totp.qr_code : null
-      return res.json({ mfa: { step: 'enroll', ticket, factorId: enrolled.id, qrCode, secret: enrolled?.totp?.secret ?? null } })
+      return res.json({ mfa: { step: 'enroll', ticket, factorId: enrolled.id, qrCode: qrCodeDataUrl(enrolled?.totp?.qr_code), secret: enrolled?.totp?.secret ?? null, uri: authenticatorUri(enrolled?.totp?.uri) } })
     }
     loginFailures.delete(lockKey)
     await audit(req, 'staff.login', { actor: session.user, actorName: profile.display_name })

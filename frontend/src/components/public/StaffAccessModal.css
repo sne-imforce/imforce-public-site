@@ -438,3 +438,11 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+.staff-mfa__open-app {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--color-accent-text);
+  font: 700 13px/1.5 var(--font-interface);
+  text-align: center;
+}

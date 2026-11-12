@@ -70,7 +70,7 @@ globalThis.fetch = async (input, init = {}) => {
       if (auth !== `Bearer ${MFA_TICKET}`) return json({ message: 'unauthorized' }, 401)
       const factor = { id: crypto.randomUUID(), factor_type: 'totp', status: 'unverified' }
       state.factors.push(factor)
-      return json({ id: factor.id, type: 'totp', totp: { qr_code: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg"/>', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x' } })
+      return json({ id: factor.id, type: 'totp', totp: { qr_code: state.qrPrefixed ? 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg"/>' : '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 41 41"><path fill="#000000" d="M4 4h7v7H4z"/></svg>', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/IMFORCE:mfa.staff@imforce.co.za?secret=JBSWY3DPEHPK3PXP&issuer=IMFORCE' } })
     }
     const factorRoute = url.pathname.match(/^\/auth\/v1\/factors\/([\w-]+)(?:\/(challenge|verify))?$/)
     if (factorRoute) {
