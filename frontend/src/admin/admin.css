@@ -14,12 +14,6 @@
   margin: 0 auto;
 }
 
-.admin-loading {
-  margin: 48px auto;
-  color: var(--color-muted);
-  font: 600 15px/1.5 var(--font-interface);
-  text-align: center;
-}
 
 /* Header and tabs */
 .admin__header {

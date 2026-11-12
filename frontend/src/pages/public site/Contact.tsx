@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { submitContact } from '../../data/api'
 import Navbar from '../../components/public/Navbar'
 import './Contact.css'
+import Spinner from '../../components/ui/Spinner'
 
 type SentEnquiry = { firstName: string; email: string; enquiryType: string; reference: string | null }
 
@@ -265,7 +266,7 @@ function Contact() {
                 </p>
               )}
               <button className="contact-button" type="submit" disabled={sending}>
-                {sending ? 'Sending…' : 'Send message'}
+                {sending ? <Spinner label="Sending…" size="sm" tone="light" /> : 'Send message'}
               </button>
             </form>
             </>

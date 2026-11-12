@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { FiAlertTriangle } from 'react-icons/fi'
+import Spinner from '../components/ui/Spinner'
 
 type Props = {
   open: boolean
@@ -61,7 +62,7 @@ export default function ConfirmDialog({
             Cancel
           </button>
           <button type="button" className="confirm-dialog__confirm" onClick={onConfirm} disabled={busy} aria-busy={busy}>
-            {busy ? busyLabel : confirmLabel}
+            {busy ? <Spinner label={busyLabel} size="sm" tone="light" /> : confirmLabel}
           </button>
         </div>
       </div>

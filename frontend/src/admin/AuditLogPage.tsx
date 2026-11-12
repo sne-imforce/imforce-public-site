@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { FiRefreshCw } from 'react-icons/fi'
 import { getStaffAudit, type StaffAuditEntry } from '../data/api'
 import DataTable, { type Column, type Filter } from './DataTable'
+import { LoadingBlock } from '../components/ui/Spinner'
 
 const actionLabels: Record<string, string> = {
   'staff.login': 'Signed in',
@@ -96,7 +97,7 @@ export default function AuditLogPage() {
       <section className="admin-card" aria-label="Audit log entries">
         {error && <p className="staff-access-error" role="alert">{error}</p>}
         {entries === null ? (
-          <p className="admin-loading" role="status">Loading the audit log…</p>
+          <LoadingBlock label="Loading the audit log…" />
         ) : (
           <DataTable
             label="Audit log"

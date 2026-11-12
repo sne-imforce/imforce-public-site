@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { saveStaffToken, staffLogin, verifyStaffMfa, type StaffMfaStep, type StaffSession } from '../data/api'
+import Spinner from '../components/ui/Spinner'
 
 type Props = {
   notice: string
@@ -87,7 +88,7 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
           </label>
           {error && <p className="staff-access-error" role="alert">{error}</p>}
           <button className="staff-access-submit" type="submit" disabled={busy} aria-busy={busy}>
-            {busy ? 'Checking…' : 'Verify and continue'}
+            {busy ? <Spinner label="Checking…" size="sm" tone="light" /> : 'Verify and continue'}
           </button>
           <button className="staff-mfa__back" type="button" onClick={() => { setMfaStep(null); setError('') }}>
             Use a different account
@@ -114,7 +115,7 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
           </label>
           {error && <p className="staff-access-error" role="alert">{error}</p>}
           <button className="staff-access-submit" type="submit" disabled={busy} aria-busy={busy}>
-            {busy ? 'Signing in…' : 'Continue to recruiter dashboard'}
+            {busy ? <Spinner label="Signing in…" size="sm" tone="light" /> : 'Continue to recruiter dashboard'}
           </button>
           <p className="staff-access-description">
             For authorised IMFORCE staff only. Sign-in attempts are monitored and logged.

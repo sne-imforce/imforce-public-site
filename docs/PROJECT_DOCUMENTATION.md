@@ -235,7 +235,7 @@ sequenceDiagram
 ### UX and accessibility conventions
 
 - Forms use native `required` and `maxLength` attributes that match the server limits, plus server-side field-level messages. The employer form lists the errors as links to each field.
-- Buttons show a busy state while a request is in flight, which prevents double submission.
+- Buttons show a busy state with a small spinner while a request is in flight, which prevents double submission. Areas whose content is still loading (home and careers vacancies, staff workspace, audit log, payment confirmation after Paystack) show the shared `Spinner` / `LoadingBlock` component (`components/ui/Spinner.tsx`), which screen readers announce and which pulses instead of spinning for people who prefer reduced motion.
 - Error messages are written for end users ("Check your internet connection…") and never contain technical details.
 - The `/admin` link is a small gear icon in the footer, kept out of the main navigation.
 - Staff workspace tables (job posts, enquiries, audit log) share one `DataTable` component: a search box, a filter for each useful column, sortable column headers (with `aria-sort`), and 10 rows per page with ‹ › buttons and a "Showing 11–20 of 47" count. Enquiry rows expand to show full details and a reply link. Deleting a job post asks for confirmation in a modal that names the vacancy; focus starts on Cancel, Escape or Cancel deletes nothing, and a failed delete shows its error inside the modal. Native browser `confirm()` boxes are not used. Below 760 px wide, each row becomes a labelled card, so nothing is squeezed.

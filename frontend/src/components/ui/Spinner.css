@@ -1,0 +1,82 @@
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-primary, #012e6f);
+  font: 600 14px/1.4 var(--font-interface, system-ui, sans-serif);
+  vertical-align: middle;
+}
+
+.spinner__ring {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgb(1 46 111 / 15%);
+  border-top-color: currentcolor;
+  border-radius: 50%;
+  animation: spinner-rotate 0.75s linear infinite;
+}
+
+.spinner--sm {
+  gap: 8px;
+  font-size: inherit;
+  color: inherit;
+}
+
+.spinner--sm .spinner__ring {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+.spinner--lg {
+  flex-direction: column;
+  gap: 14px;
+  color: var(--color-muted, #5b6575);
+  font-size: 15px;
+}
+
+.spinner--lg .spinner__ring {
+  width: 40px;
+  height: 40px;
+  border-width: 4px;
+  border-color: rgb(1 46 111 / 12%);
+  border-top-color: var(--color-primary, #012e6f);
+}
+
+.spinner--light .spinner__ring {
+  border-color: rgb(255 255 255 / 35%);
+  border-top-color: #fff;
+}
+
+.spinner__label--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.loading-block {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spinner-pulse {
+  50% { opacity: 0.35; }
+}
+
+/* People who turn off animations still see that something is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner__ring {
+    animation: spinner-pulse 1.6s ease-in-out infinite;
+  }
+}

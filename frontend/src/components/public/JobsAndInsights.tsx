@@ -4,6 +4,7 @@ import { loadPublicVacancies, useRecruiterVacancies, useVacancyStatus } from '..
 import type { Vacancy } from '../../data/vacancies'
 import { formatDateDmy, formatSalary } from '../../utils/dates'
 import './JobsAndInsights.css'
+import { LoadingBlock } from '../ui/Spinner'
 
 const insightCards = [
   {
@@ -128,6 +129,7 @@ function JobsAndInsights() {
                 <h3 id="urgent-vacancies-title">Urgent openings</h3>
               </div>
             </div>
+            {vacancyStatus.loading && <LoadingBlock label="Loading current vacancies…" />}
             <div className="vacancy-grid vacancy-grid--urgent">
               {urgentVacancies.slice(0, 3).map((vacancy) => (
                 <VacancyCard

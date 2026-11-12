@@ -25,7 +25,7 @@ The Vite development server defaults to port 5173 and the API defaults to 3001. 
 ## Tests
 
 - `cd backend && npm test` runs the API security regression suite (offline; all external services are mocked).
-- `qa/e2e-smoke.cjs` and `qa/e2e-admin.cjs` run the browser end-to-end checks (public site and staff workspace) and `qa/db-permissions.sh` runs the database permission checks (scratch database only). See the QA review for how to run them.
+- `qa/e2e-smoke.cjs`, `qa/e2e-admin.cjs` and `qa/e2e-loading.cjs` run the browser end-to-end checks (public site, staff workspace and loading states) and `qa/db-permissions.sh` runs the database permission checks (scratch database only). See the QA review for how to run them.
 
 ## API
 

@@ -18,6 +18,7 @@ import type { Vacancy } from '../../data/vacancies'
 import { formatDateDmy, formatSalary } from '../../utils/dates'
 import './Careers.css'
 import { safeHttpsUrl } from '../../utils/url'
+import { LoadingBlock } from '../../components/ui/Spinner'
 
 const filterStorageKey = 'imforce-careers-filters'
 
@@ -475,24 +476,28 @@ function Careers() {
 
                   </>
                 ) : (
-                  <div className="careers-empty careers-empty--detail">
-                    <h3>{vacancyStatus.loading ? 'Loading vacancies' : 'No current vacancies'}</h3>
-                    <p>{vacancyStatus.loading ? 'Please wait while openings load.' : 'Check back soon or contact our team about upcoming opportunities.'}</p>
-                    <button type="button" onClick={resetFilters}>
-                      Clear filters
-                    </button>
-                  </div>
+                  vacancyStatus.loading ? <LoadingBlock label="Loading vacancies…" /> : (
+                    <div className="careers-empty careers-empty--detail">
+                      <h3>No current vacancies</h3>
+                      <p>Check back soon or contact our team about upcoming opportunities.</p>
+                      <button type="button" onClick={resetFilters}>
+                        Clear filters
+                      </button>
+                    </div>
+                  )
                 )}
               </aside>
             </div>
           ) : (
-            <div className="careers-empty">
-              <h3>{vacancyStatus.loading ? 'Loading vacancies' : 'No matching roles'}</h3>
-              <p>{vacancyStatus.loading ? 'Please wait while openings load.' : 'Try a different search or clear your filters.'}</p>
-              <button type="button" onClick={resetFilters}>
-                Clear filters
-              </button>
-            </div>
+            vacancyStatus.loading ? <LoadingBlock label="Loading vacancies…" /> : (
+              <div className="careers-empty">
+                <h3>No matching roles</h3>
+                <p>Try a different search or clear your filters.</p>
+                <button type="button" onClick={resetFilters}>
+                  Clear filters
+                </button>
+              </div>
+            )
           )}
         </section>
       </main>

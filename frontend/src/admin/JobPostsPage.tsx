@@ -8,6 +8,7 @@ import {
 } from '../data/recruiterVacancies'
 import { formatDateDmy, formatSalary } from '../utils/dates'
 import { useAdmin } from './adminContext'
+import Spinner from '../components/ui/Spinner'
 
 const employmentTypes = ['Permanent', 'Contract', 'Fixed-term', 'Temporary']
 
@@ -222,7 +223,7 @@ function JobPostForm({ editing, missing, onDone }: FormProps) {
             <div className="admin-form-actions">
               <Link className="admin__button" to="/admin">Cancel</Link>
               <button className="staff-access-submit" type="submit" disabled={saving} aria-busy={saving}>
-                {saving ? 'Saving…' : editing ? 'Save changes' : 'Publish job post'}
+                {saving ? <Spinner label="Saving…" size="sm" tone="light" /> : editing ? 'Save changes' : 'Publish job post'}
               </button>
             </div>
           </form>

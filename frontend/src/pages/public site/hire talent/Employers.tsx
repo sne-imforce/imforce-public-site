@@ -6,6 +6,7 @@ import { initializePaystackCheckout, verifyPaystackPayment } from '../../../data
 import { formatDateDmy } from '../../../utils/dates'
 import Navbar from '../../../components/public/Navbar'
 import './Employers.css'
+import Spinner from '../../../components/ui/Spinner'
 
 const processSteps = [
   {
@@ -487,11 +488,11 @@ function Employers() {
             form. They are sent to IMFORCE only when you confirm the job order.
             Clear your saved draft when finished.
           </aside>
-          {(paymentNotice || (paymentReference ? 'Checking your Paystack payment…' : '')) && (
-            <p className="employers-payment-notice" role="status" aria-live="polite">
-              {paymentNotice || 'Checking your Paystack payment…'}
-            </p>
-          )}
+          {paymentNotice ? (
+            <p className="employers-payment-notice" role="status" aria-live="polite">{paymentNotice}</p>
+          ) : paymentReference ? (
+            <p className="employers-payment-notice"><Spinner label="Confirming your payment with Paystack…" size="sm" /></p>
+          ) : null}
           {jobOrderIssues.length > 0 && (
             <div className="employers-form-errors" role="alert" aria-labelledby="employers-form-errors-title">
               <h3 id="employers-form-errors-title">Please improve these job details</h3>
@@ -902,7 +903,7 @@ function Employers() {
                   } finally { setSubmitting(false) }
                 }}
               >
-                {submitting ? 'Opening Paystack…' : 'Checkout'}
+                {submitting ? <Spinner label="Opening Paystack…" size="sm" tone="light" /> : 'Checkout'}
               </button>
             </div>
           </div>

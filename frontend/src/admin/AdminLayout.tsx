@@ -7,6 +7,7 @@ import {
 } from '../data/api'
 import { loadStaffVacancies } from '../data/recruiterVacancies'
 import AdminLogin from './AdminLogin'
+import { LoadingBlock } from '../components/ui/Spinner'
 import type { AdminContext } from './adminContext'
 import '../components/public/StaffAccessModal.css'
 import './admin.css'
@@ -103,7 +104,7 @@ export default function AdminLayout() {
   }
 
   if (checking && !staffName) {
-    return <main className="staff-access-page"><p className="admin-loading" role="status">Loading the staff workspace…</p></main>
+    return <main className="staff-access-page"><LoadingBlock label="Loading the staff workspace…" /></main>
   }
 
   if (!staffName) {
