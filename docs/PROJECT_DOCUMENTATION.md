@@ -188,7 +188,7 @@ sequenceDiagram
 ├── backend/
 │   ├── server.js                   Express API (routes, validation, Paystack, staff auth)
 │   ├── security.js                 Intrusion detection: honeypots, scoring, blocking, alerts
-│   ├── migrations/                 Supabase SQL (run in order 001 → 005)
+│   ├── migrations/                 Supabase SQL (run in order 001 → 006)
 │   ├── test/                       node:test security regression suite (mocks all services)
 │   └── .env.example                Configuration template (no secrets)
 └── frontend/
@@ -276,11 +276,11 @@ Every staff response is sent with `Cache-Control: no-store`.
 
 | Method & path | Purpose | Rate limit |
 |---|---|---|
-| `POST /api/staff/login` | Step 1: `{email,password}`. With MFA on (the default) it returns `{mfa:{step:'enroll'\|'verify', ticket, factorId, qrCode?, secret?}}` and **no usable session**. A wrong password and a non-staff account get the **same** 401 message. The account locks for 15 minutes after 5 failures. | 5 / IP / min |
+| `POST /api/staff/login` | Step 1: `{username,password}`. The API looks up the agent's profile and authenticates with the email on file, so staff never type their email. Unknown usernames get the same message **and the same response time (at least 600 ms)** as a wrong password, so usernames cannot be discovered. Responses include `displayName`. With MFA on (the default) it returns `{mfa:{step:'enroll'\|'verify', ticket, factorId, qrCode?, secret?}}` and **no usable session**. A wrong password and a non-staff account get the **same** 401 message. The account locks for 15 minutes after 5 failures. | 5 / IP / min |
 | `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code}` (6 digits) → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
 | `GET /api/staff/audit` | Latest 500 staff audit log entries (searched and paged in the browser) | 60 |
-| `GET /api/staff/me` | Current staff email | 60 |
+| `GET /api/staff/me` | Current agent: `{email, displayName, username}` | 60 |
 | `GET /api/staff/vacancies` | All vacancies, including client names | 60 |
 | `POST /api/staff/vacancies` | Create (published immediately) | 60 |
 | `PUT /api/staff/vacancies/:id` | Update (`:id` must be a UUID) | 60 |
@@ -302,13 +302,14 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `003_vacancy_closing_date.sql` | `closing_date` column |
 | `004_security_hardening.sql` | Hides `client_name` from the public; hides expired roles in RLS; CHECK limits; `updated_at` trigger; unique payment reference; `security_events` table and 180-day purge function; safer default privileges |
 | `005_staff_audit_log.sql` | Append-only `staff_audit_log`: the API may only insert and read, and triggers block UPDATE, DELETE and TRUNCATE even for the table owner |
+| `006_staff_usernames.sql` | `staff_profiles.username` (unique, lowercase, 3–32 characters) and `display_name` (the agent's name shown in the workspace); existing staff are given usernames and names from their email automatically; `staff_audit_log.actor_name` |
 
 ### Tables
 
 | Table | Contents | Public (`anon`) access |
 |---|---|---|
 | `vacancies` | Job adverts; `status` is `draft`, `published` or `closed` | SELECT on public columns only, published and not expired |
-| `staff_profiles` | `user_id` → `auth.users`, `active` flag | None |
+| `staff_profiles` | `user_id` → `auth.users`, `username`, `display_name` (agent's name), `active` flag. The email and the password hash live in Supabase Auth (`auth.users`); **passwords are never stored in readable form**. | None |
 | `contact_inquiries` | Contact form submissions (personal information) | None |
 | `employer_inquiries` | Job order `details` JSONB, including payment status and reference (personal and company information) | None |
 | `security_events` | Intrusion-detection audit trail | None |
@@ -416,7 +417,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 
 ## 13. Local development
 
-Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–005 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
+Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–006 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
 
 ```bash
 cd backend && cp .env.example .env   # then fill in the values
@@ -429,11 +430,13 @@ cd frontend && npm ci && npm run dev # site on http://localhost:5173
 
 In development the Vite dev server serves the site and the frontend calls `/api` on the same origin. Either set `VITE_API_BASE_URL=http://localhost:3001` or add a Vite proxy.
 
-Create a staff user: in Supabase, go to **Authentication → Users → Add user**, then run:
+Create a staff user (agent):
 
-```sql
-insert into public.staff_profiles (user_id) values ('<the user's uuid>');
+```bash
+cd backend && npm run staff:create
 ```
+
+It asks for the agent's full name, a username, their work email and a password (typed hidden, entered twice, at least 12 characters, must not contain the username or email). It creates the Supabase login and the staff profile together. If the profile can't be saved, it removes the login again so nothing is left half-created. The password is never passed on the command line, printed or stored by IMFORCE: Supabase keeps only a bcrypt hash.
 
 On their first sign-in, the staff member is shown a QR code to scan with an authenticator app. To run locally without MFA, set `STAFF_MFA_REQUIRED=false` in `backend/.env` (never in production).
 
@@ -475,7 +478,7 @@ The hosting choice is still open (the scope compares xneelo, Hostinger and other
 1. **Frontend**: static hosting of `frontend/dist` with SPA fallback (all paths → `index.html`), HTTPS, and the headers in `public/_headers`.
 2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`. Start it with `npm start`. It shuts down gracefully on SIGTERM and writes JSON access, security and error logs to stdout for the host to collect.
 3. **Routing**: either the same origin (`/api/*` reverse-proxied to the API) or a separate API origin set in `VITE_API_BASE_URL`.
-4. **Supabase**: run migrations 001 → 005, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
+4. **Supabase**: run migrations 001 → 006, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
 5. **Paystack**: webhook `https://<api-host>/api/payments/paystack/webhook`; test mode end to end before switching to live keys.
 6. **Alerts**: create a Slack or Teams incoming webhook in a monitored channel and set `SECURITY_ALERT_WEBHOOK_URL`.
 
@@ -514,7 +517,7 @@ order by occurred_at desc;
 
 ### 17.5 Add or remove staff
 
-To add: create the Auth user and insert into `staff_profiles`. To remove: `update public.staff_profiles set active = false where user_id = '…'`. Access is refused on the next request; existing tokens expire within an hour (or immediately after logout).
+To add: run `npm run staff:create` in `backend/` (see §13). The agent then signs in at `/admin` with their **username** and password and sets up their authenticator app. To rename an agent or change a username: `update public.staff_profiles set display_name = 'New Name', username = 'new.username' where user_id = '…'`. To reset a forgotten password: Supabase → **Authentication → Users → … → Send password recovery**. To remove: `update public.staff_profiles set active = false where user_id = '…'`. Access is refused on the next request; existing tokens expire within an hour (or immediately after logout).
 
 ### 17.6 Backups
 

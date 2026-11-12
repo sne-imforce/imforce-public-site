@@ -32,7 +32,7 @@ function Footer() {
     <footer className="global-footer">
       <div className="global-footer__inner">
         <div className="global-footer__brand">
-          <Link className="global-footer__logo" to="/" aria-label="IMFORCE Talent Recruitment home">
+          <Link className="global-footer__logo" to="/" aria-label="IMFORCE Consolidated, home page">
             <img src={footerLogo} alt="" />
             <span>IMFORCE <strong>CONSOLIDATED</strong></span>
           </Link>

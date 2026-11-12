@@ -40,6 +40,18 @@ Browser testing of the new sign-in also caught **three defects in the new code b
 
 `/admin` was restructured into an **Inventory** hub with two subscreens, **Job posts** and **Audit log**. A shared tab bar and the Home and Sign out buttons appear on all three. Every list is now a table with search, sortable columns and filters, showing 10 rows per page with ‹ › buttons, so long lists never clutter the screen. On phones each row becomes a labelled card. The accessibility audit found one heading-order issue on the new Job posts screen, which was fixed before release. All admin URLs (not only `/admin` itself) are now `noindex`.
 
+### Round 4 (12 November 2026): username sign-in
+
+Staff now sign in with a **username** instead of their email, and the workspace greets them by name. The design keeps security intact:
+
+- The API resolves the username to the account and authenticates with Supabase using the email on file.
+- Unknown usernames get the same message *and* the same minimum response time (600 ms) as a wrong password, so usernames can't be harvested by measuring response times.
+- An email typed into the username box is refused.
+- Lockout applies per account.
+- Passwords are stored only as Supabase's bcrypt hash and are never stored or logged in readable form.
+
+`npm run staff:create` adds an agent with name, username, email and a hidden password, and rolls back on failure. Testing found and fixed a defect in that tool before release: with piped input it exited *successfully* without creating anything. A full-rule accessibility audit also found a long-standing label mismatch on the footer logo link (WCAG 2.5.3, all pages), which is now fixed.
+
 ---
 
 ## 2. Findings and remediation
@@ -159,10 +171,10 @@ All results were reproduced in the final QA pass. Commands:
 
 | Layer | Command | Result |
 |---|---|---|
-| API and security unit/integration | `cd backend && npm test` | **43 / 43 passed** (including 8 MFA and 2 audit-log tests) |
-| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **29 / 29 passed**; migrations 001–005 re-run safely |
-| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **73 / 73 passed** |
-| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **44 / 44 passed**: tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
+| API and security unit/integration | `cd backend && npm test` | **51 / 51 passed** (including 8 MFA, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
+| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **37 / 37 passed**; migrations 001–006 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
+| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **75 / 75 passed** |
+| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **45 / 45 passed**: agent name in header, tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
 | Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |
 | Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |
 | Live server smoke | `npm start`: health, honeypot alarm, access log, SIGTERM | Pass |
@@ -176,7 +188,7 @@ Test design notes: the API suite mocks Supabase, Paystack and the alert webhook 
 
 ## 6. Release conditions (go-live checklist)
 
-- [ ] Run `backend/migrations/004_security_hardening.sql` and `005_staff_audit_log.sql` on Supabase. The API works without them, but **client names stay exposed to the anon key until 004 runs** (QA-02), and the security and audit trails need both.
+- [ ] Run `backend/migrations/004_security_hardening.sql`, `005_staff_audit_log.sql` and `006_staff_usernames.sql` on Supabase, then check the generated usernames (`select username, display_name from staff_profiles`) and tell each agent their username. The API works without them, but **client names stay exposed to the anon key until 004 runs** (QA-02), and the security and audit trails need both.
 - [ ] Check that MFA (TOTP) is enabled in Supabase (**Authentication → Multi-Factor**) and that `STAFF_MFA_REQUIRED` is **not** set to `false`. Each staff member then sets up their authenticator on their next sign-in. Do a test sign-in on staging first.
 - [ ] Delete the old scope `.docx` from the live web host (QA-03).
 - [ ] Configure the security headers on the chosen host (`public/_headers` or an equivalent).

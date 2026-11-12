@@ -24,11 +24,11 @@ async function stubApi(page, opts = {}) {
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (p === '/api/vacancies') return json({ vacancies: [{ id: 'a', title: 'Bad Link Role', location: 'Durban', region: 'KZN', category: 'Admin', employmentType: 'Permanent', isUrgent: false, closingDate: null, posted: '2026-11-01T00:00:00Z', applicationUrl: 'javascript:alert(1)', summary: 'Role', responsibilities: ['x'] }] })
     if (p === '/api/contact' && m === 'POST') { opts.contactBody = route.request().postDataJSON(); return json({ ok: true }, 201) }
-    if (p === '/api/staff/login') { opts.loginCalls = (opts.loginCalls || 0) + 1; await new Promise(r => setTimeout(r, 400)); return json({ accessToken: 'a.b.c', email: 'staff@imforce.co.za', expiresIn: 3600 }) }
+    if (p === '/api/staff/login') { opts.loginCalls = (opts.loginCalls || 0) + 1; opts.loginBody = route.request().postDataJSON(); await new Promise(r => setTimeout(r, 400)); return json({ accessToken: 'a.b.c', email: 'staff@imforce.co.za', displayName: 'Thandi Mokoena', username: 'thandi.mokoena', expiresIn: 3600 }) }
     if (p === '/api/staff/vacancies') return opts.expire ? json({ error: 'Your session is invalid or expired. Sign in again.' }, 401) : json({ vacancies: [] })
     if (p === '/api/staff/inquiries') return json({ inquiries: [{ id: '1', kind: 'contact', created_at: '2026-11-10T10:00:00Z', name: 'Lerato', email: 'l@x.co', phone: '082', enquiry_type: 'Job opportunities', subject: 'Hi', message: '<img src=x onerror=alert(1)>' }] })
     if (p === '/api/staff/logout') { opts.logout = true; return json({ ok: true }) }
-    if (p === '/api/staff/me') return json({ email: 'staff@imforce.co.za' })
+    if (p === '/api/staff/me') return json({ email: 'staff@imforce.co.za', displayName: 'Thandi Mokoena', username: 'thandi.mokoena' })
     return json({ error: 'Not found.' }, 404)
   })
 }
@@ -90,12 +90,14 @@ async function stubApi(page, opts = {}) {
     const page = await browser.newPage(); const state = {}; await stubApi(page, state)
     let dialog = false; page.on('dialog', async (d) => { dialog = true; await d.dismiss() })
     await page.goto(BASE + '/admin')
-    await page.fill('input[name="email"]', 'staff@imforce.co.za'); await page.fill('input[name="password"]', 'pw')
+    await page.fill('input[name="username"]', 'thandi.mokoena'); await page.fill('input[name="password"]', 'pw')
     const btn = page.locator('button.staff-access-submit')
     await btn.click(); await btn.click({ force: true, timeout: 200 }).catch(() => {})
     ok('login button shows busy state', /Signing in/.test(await btn.textContent()))
     await page.getByRole('heading', { name: 'Inventory' }).waitFor()
     ok('double-click sends only one login request', state.loginCalls === 1, `calls=${state.loginCalls}`)
+    ok('header greets the agent by name, not email', (await page.locator('.admin__signed-in').innerText()).trim() === 'Signed in as Thandi Mokoena')
+    ok('login asked for a username, not an email', state.loginBody?.username === 'thandi.mokoena' && !('email' in (state.loginBody || {})))
     await page.getByRole('button', { name: 'Show details' }).first().click()
     { const details = page.locator('.data-table__details-row'); ok('enquiry shows name/phone/type', await details.getByText('Lerato').isVisible() && await details.getByText('082').isVisible() && await details.getByText('Job opportunities').isVisible()) }
     ok('stored XSS in enquiry is rendered as text', !dialog && await page.getByText('<img src=x onerror=alert(1)>').isVisible())
@@ -105,7 +107,7 @@ async function stubApi(page, opts = {}) {
     ok('sign out calls server logout and clears token', state.logout === true && await page.evaluate(() => sessionStorage.getItem('imforce-staff-access-token')) === null)
 
     // session expiry handling
-    await page.fill('input[name="email"]', 'staff@imforce.co.za'); await page.fill('input[name="password"]', 'pw')
+    await page.fill('input[name="username"]', 'thandi.mokoena'); await page.fill('input[name="password"]', 'pw')
     await page.click('button.staff-access-submit'); await page.getByRole('heading', { name: 'Inventory' }).waitFor()
     state.expire = true
     await page.evaluate(() => { sessionStorage.setItem('imforce-staff-access-expires', String(Date.now() - 1)) })
@@ -127,7 +129,7 @@ async function stubApi(page, opts = {}) {
       return json({ vacancies: [] })
     })
     await page.goto(BASE + '/admin')
-    await page.fill('input[name="email"]', 'staff@imforce.co.za'); await page.fill('input[name="password"]', 'secret-password')
+    await page.fill('input[name="username"]', 'thandi.mokoena'); await page.fill('input[name="password"]', 'secret-password')
     await page.click('button.staff-access-submit')
     await page.getByText('Set up two-step sign-in').waitFor()
     ok('MFA: password is not carried into the code field', await page.inputValue('input[name="code"]') === '' && await page.locator('input[name="password"]').count() === 0)

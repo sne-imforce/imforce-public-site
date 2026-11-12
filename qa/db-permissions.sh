@@ -14,8 +14,17 @@ $P -c "do \$\$ begin
   if not exists (select from pg_roles where rolname='anon') then create role anon nologin; end if;
   if not exists (select from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
   if not exists (select from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
-end \$\$; create schema if not exists auth; create table if not exists auth.users(id uuid primary key);
+end \$\$; create schema if not exists auth; create table if not exists auth.users(id uuid primary key); alter table auth.users add column if not exists email text;
 grant usage on schema public to anon, authenticated, service_role;" || exit 1
+# Apply 001-005, add existing staff (as before usernames existed), then 006 backfills them.
+for f in "$DIR"/00[1-5]*.sql; do $P -f "$f" 2>/dev/null || { echo "FAIL migration $(basename "$f")"; exit 1; }; done
+$P -c "insert into auth.users(id, email) values
+  ('a0000000-0000-4000-8000-000000000001', 'thandi.mokoena@imforce.co.za'),
+  ('a0000000-0000-4000-8000-000000000002', 'thandi.mokoena@partner.co.za'),
+  ('a0000000-0000-4000-8000-000000000003', 'jo@imforce.co.za'),
+  ('a0000000-0000-4000-8000-000000000004', '_sipho+test@imforce.co.za')
+  on conflict do nothing;
+  insert into public.staff_profiles(user_id) select id from auth.users where id::text like 'a0000000-%' on conflict do nothing;" >/dev/null 2>&1 || true
 for run in 1 2; do for f in "$DIR"/00*.sql; do $P -f "$f" 2>/dev/null || { echo "FAIL migration $(basename "$f") (run $run)"; exit 1; }; done; echo "PASS migrations applied (run $run)"; done
 $P -c "delete from public.vacancies; insert into public.vacancies (client_name,title,location,region,category,employment_type,summary,closing_date,status) values ('Secret Client','Open role','D','K','A','Permanent','x',null,'published'),('Secret Client','Expired role','D','K','A','Permanent','x',current_date-3,'published'),('Secret Client','Draft role','D','K','A','Permanent','x',null,'draft');"
 ok(){ out=$($P -At -c "$3" 2>&1); if [ $? -eq 0 ] && [ "$out" = "$2" ]; then echo "PASS $1"; else echo "FAIL $1 -> $out"; fails=$((fails+1)); fi; }
@@ -45,4 +54,12 @@ deny "database owner cannot truncate audit history" "truncate public.staff_audit
 deny "unknown audit action rejected" "insert into public.staff_audit_log(action) values ('vacancy.hack');" "check constraint"
 deny "anon cannot read audit log" "set role anon; select 1 from public.staff_audit_log;" "permission denied"
 deny "authenticated cannot read audit log" "set role authenticated; select 1 from public.staff_audit_log;" "permission denied"
+ok   "006 backfill: symbols stripped from derived names" "Sipho Test" "select display_name from public.staff_profiles where user_id = 'a0000000-0000-4000-8000-000000000004';"
+ok   "006 backfill: every staff profile has a valid username" "0" "select count(*) from public.staff_profiles where username !~ '^[a-z0-9][a-z0-9._-]{2,31}\$';"
+ok   "006 backfill: names derived from email" "Thandi Mokoena" "select display_name from public.staff_profiles where user_id = 'a0000000-0000-4000-8000-000000000001';"
+ok   "006 backfill: same email prefix gets a unique username" "thandi.mokoena,thandi.mokoena2" "select string_agg(username, ',' order by username) from public.staff_profiles where user_id in ('a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000002');"
+deny "duplicate username rejected" "update public.staff_profiles set username = 'thandi.mokoena' where user_id = 'a0000000-0000-4000-8000-000000000003';" "duplicate key"
+deny "username with spaces or capitals rejected" "update public.staff_profiles set username = 'Thandi M' where user_id = 'a0000000-0000-4000-8000-000000000003';" "check constraint"
+deny "staff profile without a name rejected" "update public.staff_profiles set display_name = ' ' where user_id = 'a0000000-0000-4000-8000-000000000003';" "check constraint"
+deny "anon cannot read usernames" "set role anon; select username from public.staff_profiles;" "permission denied"
 echo; [ $fails -eq 0 ] && echo "All database checks passed." || { echo "$fails database check(s) failed."; exit 1; }

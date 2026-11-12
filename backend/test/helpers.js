@@ -8,12 +8,20 @@ const PAYSTACK_SECRET = 'sk_test_fake_secret_for_tests'
 const ALERT_URL = 'https://alerts.test/hook'
 const STAFF_ID = '11111111-1111-4111-8111-111111111111'
 const OUTSIDER_ID = '22222222-2222-4222-8222-222222222222'
+const SECOND_ID = '33333333-3333-4333-8333-333333333333'
+const MFA_ID = '44444444-4444-4444-8444-444444444444'
+// Staff directory (staff_profiles joined with auth.users). Passwords live only in the mocked Auth.
+const STAFF = [
+  { user_id: STAFF_ID, username: 'staff', display_name: 'Thandi Mokoena', email: 'staff@imforce.co.za' },
+  { user_id: SECOND_ID, username: 'second.staff', display_name: 'Sipho Dlamini', email: 'second.staff@imforce.co.za' },
+  { user_id: MFA_ID, username: 'mfa.staff', display_name: 'Lerato Nkosi', email: 'mfa.staff@imforce.co.za' },
+]
 const VALID_TOKEN = 'aaa.bbb.staff'
 const OUTSIDER_TOKEN = 'aaa.bbb.outsider'
 // JWT-shaped tokens carrying Supabase's authenticator assurance level claim.
 const jwt = (claims, tag) => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.${tag}`
-const MFA_TICKET = jwt({ aal: 'aal1', sub: STAFF_ID }, 'ticket')
-const MFA_SESSION = jwt({ aal: 'aal2', sub: STAFF_ID }, 'session')
+const MFA_TICKET = jwt({ aal: 'aal1', sub: MFA_ID }, 'ticket')
+const MFA_SESSION = jwt({ aal: 'aal2', sub: MFA_ID }, 'session')
 const MFA_CODE = '123456'
 
 Object.assign(process.env, {
@@ -49,8 +57,10 @@ globalThis.fetch = async (input, init = {}) => {
   if (url.origin === SUPABASE) {
     state.calls.push({ method, path: url.pathname, search: url.search, body, auth })
     if (url.pathname === '/auth/v1/token') {
-      if (['staff@imforce.co.za', 'second.staff@imforce.co.za'].includes(body.email) && body.password === 'correct-horse') return json({ access_token: VALID_TOKEN, expires_in: 3600, user: { id: STAFF_ID, email: body.email } })
-      if (body.email === 'mfa.staff@imforce.co.za' && body.password === 'correct-horse') return json({ access_token: MFA_TICKET, expires_in: 3600, user: { id: STAFF_ID, email: body.email, factors: state.factors } })
+      state.lastPasswordGrantEmail = body.email
+      if (body.email === 'staff@imforce.co.za' && body.password === 'correct-horse') return json({ access_token: VALID_TOKEN, expires_in: 3600, user: { id: STAFF_ID, email: body.email } })
+      if (body.email === 'second.staff@imforce.co.za' && body.password === 'correct-horse') return json({ access_token: VALID_TOKEN, expires_in: 3600, user: { id: SECOND_ID, email: body.email } })
+      if (body.email === 'mfa.staff@imforce.co.za' && body.password === 'correct-horse') return json({ access_token: MFA_TICKET, expires_in: 3600, user: { id: MFA_ID, email: body.email, factors: state.factors } })
       if (body.email === 'outsider@example.com' && body.password === 'correct-horse') return json({ access_token: OUTSIDER_TOKEN, expires_in: 3600, user: { id: OUTSIDER_ID, email: body.email } })
       return json({ message: 'Invalid login credentials' }, 400)
     }
@@ -70,16 +80,27 @@ globalThis.fetch = async (input, init = {}) => {
       if (factorRoute[2] === 'verify') {
         if (body.code !== MFA_CODE) return json({ message: 'Invalid TOTP code entered' }, 422)
         factor.status = 'verified'
-        return json({ access_token: MFA_SESSION, expires_in: 3600, user: { id: STAFF_ID, email: 'mfa.staff@imforce.co.za', factors: state.factors } })
+        return json({ access_token: MFA_SESSION, expires_in: 3600, user: { id: MFA_ID, email: 'mfa.staff@imforce.co.za', factors: state.factors } })
       }
     }
     if (url.pathname === '/auth/v1/user') {
-      if (auth === `Bearer ${MFA_TICKET}` || auth === `Bearer ${MFA_SESSION}`) return json({ id: STAFF_ID, email: 'mfa.staff@imforce.co.za', factors: state.factors })
+      if (auth === `Bearer ${MFA_TICKET}` || auth === `Bearer ${MFA_SESSION}`) return json({ id: MFA_ID, email: 'mfa.staff@imforce.co.za', factors: state.factors })
       if (auth === `Bearer ${VALID_TOKEN}`) return json({ id: STAFF_ID, email: 'staff@imforce.co.za' })
       if (auth === `Bearer ${OUTSIDER_TOKEN}`) return json({ id: OUTSIDER_ID, email: 'outsider@example.com' })
       return json({ message: 'invalid JWT' }, 401)
     }
-    if (url.pathname === '/rest/v1/staff_profiles') return json(url.search.includes(STAFF_ID) ? [{ user_id: STAFF_ID }] : [])
+    if (url.pathname === '/rest/v1/staff_profiles') {
+      const byUser = url.searchParams.get('user_id')?.slice(3)
+      const byName = url.searchParams.get('username')?.slice(3)
+      const rows = STAFF.filter((row) => (byUser ? row.user_id === byUser : row.username === byName))
+      return json(rows.map(({ user_id, username, display_name }) => ({ user_id, username, display_name })))
+    }
+    const adminUser = url.pathname.match(/^\/auth\/v1\/admin\/users\/([\w-]+)$/)
+    if (adminUser) {
+      if (init.headers?.apikey !== 'service-key') return json({ message: 'forbidden' }, 403)
+      const row = STAFF.find((item) => item.user_id === adminUser[1])
+      return row ? json({ id: row.user_id, email: row.email }) : json({ message: 'User not found' }, 404)
+    }
     if (url.pathname === '/rest/v1/security_events') { state.events.push(body); return json(undefined, 201) }
     if (url.pathname === '/rest/v1/staff_audit_log') {
       if (method === 'POST') { state.audit.push(body); return json(undefined, 201) }

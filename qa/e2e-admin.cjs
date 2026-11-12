@@ -20,13 +20,13 @@ const inquiries = Array.from({ length: 23 }, (_, i) => i % 3 === 0
   ? { id: `e${i}`, kind: 'employer', created_at: new Date(Date.UTC(2026, 10, 11) - i * 3600_000 * 10).toISOString(), details: { legalName: `Company ${i} (Pty) Ltd`, jobTitle: `Role ${i}`, email: `hr${i}@company.co.za`, paymentStatus: ['paid', 'pending', 'initialization_failed'][i % 3 === 0 ? (i / 3) % 3 : 0], paymentReference: `IMF-${i}` } }
   : { id: `c${i}`, kind: 'contact', created_at: new Date(Date.UTC(2026, 10, 11) - i * 3600_000 * 10).toISOString(), name: `Person ${i}`, email: `person${i}@example.com`, phone: '082', enquiry_type: 'Job opportunities', subject: `Question ${i}`, message: `<b>Message ${i}</b>` })
 const actions = ['staff.login', 'enquiries.view', 'vacancy.create', 'vacancy.update', 'vacancy.delete', 'staff.logout']
-const audit = Array.from({ length: 60 }, (_, i) => ({ occurred_at: new Date(Date.UTC(2026, 10, 12, 8) - i * 3600_000).toISOString(), actor_email: i % 2 ? 'thandi@imforce.co.za' : 'sipho@imforce.co.za', action: actions[i % 6], entity_type: null, entity_id: null, detail: i % 6 === 3 ? { title: `Job ${i}`, changedFields: ['salary', 'closing_date'] } : i % 6 === 2 || i % 6 === 4 ? { title: `Job ${i}` } : {} }))
+const audit = Array.from({ length: 60 }, (_, i) => ({ occurred_at: new Date(Date.UTC(2026, 10, 12, 8) - i * 3600_000).toISOString(), actor_email: i % 2 ? 'thandi@imforce.co.za' : 'sipho@imforce.co.za', actor_name: i % 2 ? 'Thandi Mokoena' : 'Sipho Dlamini', action: actions[i % 6], entity_type: null, entity_id: null, detail: i % 6 === 3 ? { title: `Job ${i}`, changedFields: ['salary', 'closing_date'] } : i % 6 === 2 || i % 6 === 4 ? { title: `Job ${i}` } : {} }))
 
 async function setup(page, state) {
   await page.route('**/api/**', (route) => {
     const u = new URL(route.request().url()).pathname; const m = route.request().method()
     const j = (x, s = 200) => route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(x) })
-    if (u === '/api/staff/login') return j({ accessToken: 'a.b.c', email: 'staff@imforce.co.za', expiresIn: 3600 })
+    if (u === '/api/staff/login') return j({ accessToken: 'a.b.c', email: 'staff@imforce.co.za', displayName: 'Thandi Mokoena', username: 'thandi.mokoena', expiresIn: 3600 })
     if (u === '/api/staff/inquiries') return j({ inquiries })
     if (u === '/api/staff/audit') return j({ entries: audit })
     if (u.startsWith('/api/staff/vacancies/') && m === 'DELETE') {
@@ -34,11 +34,11 @@ async function setup(page, state) {
       state.deleted = u; return j({ ok: true })
     }
     if (u.startsWith('/api/staff/vacancies/') && m === 'PUT') { state.put = route.request().postDataJSON(); return j({ vacancy: { ...vacancies[0], ...state.put, id: u.split('/').pop() } }) }
-    if (u === '/api/staff/me') return j({ email: 'staff@imforce.co.za' })
+    if (u === '/api/staff/me') return j({ email: 'staff@imforce.co.za', displayName: 'Thandi Mokoena', username: 'thandi.mokoena' })
     return j({ vacancies })
   })
   await page.goto((process.env.E2E_BASE_URL || 'http://localhost:4173') + '/admin')
-  await page.fill('input[name=email]', 'staff@imforce.co.za'); await page.fill('input[name=password]', 'pw'); await page.click('button.staff-access-submit')
+  await page.fill('input[name=username]', 'thandi.mokoena'); await page.fill('input[name=password]', 'pw'); await page.click('button.staff-access-submit')
   await page.getByRole('heading', { name: 'Inventory' }).waitFor()
 }
 const jobs = (p) => p.locator('section[aria-labelledby="inventory-jobs"]')
@@ -53,6 +53,7 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
   await setup(page, state)
   ok('tabs: Inventory, Job posts, Audit log + Home + Sign out', await page.locator('.admin__tab').count() === 3 && await page.locator('.admin__header').getByRole('link', { name: 'Home' }).isVisible() && await page.getByRole('button', { name: 'Sign out' }).isVisible())
   ok('Inventory tab is active', (await page.locator('.admin__tab.is-active').textContent()).includes('Inventory'))
+  ok('header shows the agent name', (await page.locator('.admin__signed-in').innerText()).trim() === 'Signed in as Thandi Mokoena')
   ok('summary tiles shown', await page.locator('.admin-stats li').count() === 5, (await page.locator('.admin-stats').innerText()).replace(/\n/g, ' '))
   ok('jobs: default sort newest first', (await (await rowsIn(jobs(page)).first().locator('.admin-cell__title').innerText()).trim()) === vacancies[26].title)
   ok('jobs: only 10 rows shown', await rowsIn(jobs(page)).count() === 10)
@@ -136,8 +137,8 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
   ok('audit: 10 of 60', /Showing 1–10 of 60/.test(await page.locator('.data-table__footer').innerText()))
   await page.locator('select').nth(0).selectOption('vacancy.delete')
   ok('audit: action filter', (await rowsIn(page).allInnerTexts()).every((t) => t.includes('Deleted job post')))
-  await page.locator('select').nth(1).selectOption('thandi@imforce.co.za')
-  ok('audit: staff filter combines', (await rowsIn(page).allInnerTexts()).every((t) => t.includes('thandi')))
+  await page.locator('select').nth(1).selectOption('Thandi Mokoena')
+  ok('audit: staff filter combines', (await rowsIn(page).allInnerTexts()).every((t) => t.includes('Thandi Mokoena')))
   await page.getByRole('button', { name: 'Clear' }).click()
   await page.locator('input[type=search]').fill('closing date')
   ok('audit: search finds changed fields', await rowsIn(page).count() === 10 && (await rowsIn(page).first().innerText()).includes('closing date'))

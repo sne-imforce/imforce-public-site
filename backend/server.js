@@ -254,7 +254,7 @@ async function requireStaff(req, res, next) {
       return res.status(401).json({ error: 'Your session is invalid or expired. Sign in again.' })
     }
     const user = await supabase('/auth/v1/user', { key: anonKey, token })
-    const profiles = await supabase(`/rest/v1/staff_profiles?user_id=eq.${encodeURIComponent(user.id)}&active=eq.true&select=user_id`)
+    const profiles = await supabase(`/rest/v1/staff_profiles?user_id=eq.${encodeURIComponent(user.id)}&active=eq.true&select=user_id,username,display_name`)
     if (!profiles.length) {
       security.record(req, 'non-staff-token', 'high', 'Valid account without an active staff profile called a staff route')
       return res.status(403).json({ error: 'This account is not authorized for staff access.' })
@@ -264,6 +264,7 @@ async function requireStaff(req, res, next) {
       return res.status(401).json({ error: 'Two-factor sign-in is required. Sign in again.' })
     }
     req.staffUser = user
+    req.staffProfile = profiles[0]
     req.staffToken = token
     next()
   } catch {
@@ -576,7 +577,16 @@ app.post('/api/payments/paystack/webhook', async (req, res) => {
 const loginFailures = new Map()
 const loginFailureLimit = 5
 const loginLockMs = 15 * 60 * 1000
-const loginFailureMessage = 'Email or password is incorrect, or the account is temporarily locked. Try again later or contact your IMFORCE administrator.'
+const loginFailureMessage = 'Username or password is incorrect, or the account is temporarily locked. Try again later or contact your IMFORCE administrator.'
+const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/
+// Failed sign-ins take at least this long, so response time does not reveal
+// whether a username exists (a known username needs extra lookups).
+const failedLoginMinimumMs = 600
+const padFailedLogin = async (startedAt) => {
+  const wait = failedLoginMinimumMs - (Date.now() - startedAt)
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait + crypto.randomInt(0, 120)))
+}
+const loadStaffProfile = async (userId) => (await supabase(`/rest/v1/staff_profiles?user_id=eq.${encodeURIComponent(userId)}&active=eq.true&select=user_id,username,display_name`))[0] ?? null
 
 function accountLocked(email) {
   const entry = loginFailures.get(email)
@@ -598,30 +608,48 @@ function recordLoginFailure(req, email) {
 
 app.post('/api/staff/login', async (req, res) => {
   if (!requireConfig(res)) return
-  const { email, password } = req.body || {}
-  if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password || email.length > 254 || password.length > 256) return res.status(400).json({ error: 'Enter your staff email and password.' })
-  const normalizedEmail = email.trim().toLowerCase()
-  if (accountLocked(normalizedEmail)) {
-    security.record(req, 'locked-account-attempt', 'medium', 'Sign-in attempted on a locked staff account')
+  const startedAt = Date.now()
+  const { username, password } = req.body || {}
+  if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password || username.length > 64 || password.length > 256) {
+    return res.status(400).json({ error: 'Enter your username and password.' })
+  }
+  const normalizedUsername = username.trim().toLowerCase()
+  const fail = async (lockKey) => {
+    if (lockKey) recordLoginFailure(req, lockKey)
+    await padFailedLogin(startedAt)
     return res.status(401).json({ error: loginFailureMessage })
   }
+  if (!usernamePattern.test(normalizedUsername)) return fail(`username:${normalizedUsername.slice(0, 64)}`)
+
+  let profile
+  let email
+  try {
+    ;[profile] = await supabase(`/rest/v1/staff_profiles?username=eq.${encodeURIComponent(normalizedUsername)}&active=eq.true&select=user_id,username,display_name`)
+    if (profile) email = (await supabase(`/auth/v1/admin/users/${encodeURIComponent(profile.user_id)}`))?.email
+  } catch {
+    return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' })
+  }
+  // Lock by account when the username exists, otherwise by the username tried.
+  const lockKey = profile ? profile.user_id : `username:${normalizedUsername}`
+  if (accountLocked(lockKey)) {
+    security.record(req, 'locked-account-attempt', 'medium', 'Sign-in attempted on a locked staff account')
+    return fail(null)
+  }
+  // Unknown or inactive username: same message and timing as a wrong password.
+  if (!profile || !email) return fail(lockKey)
+
   let session
   try {
-    session = await supabase('/auth/v1/token?grant_type=password', { key: anonKey, method: 'POST', body: { email: normalizedEmail, password } })
+    session = await supabase('/auth/v1/token?grant_type=password', { key: anonKey, method: 'POST', body: { email, password } })
   } catch (error) {
     if (error.status >= 500 || error.status === 429 || error.name === 'TimeoutError') return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' })
-    recordLoginFailure(req, normalizedEmail)
-    return res.status(401).json({ error: loginFailureMessage })
+    return fail(lockKey)
   }
   try {
-    const profiles = await supabase(`/rest/v1/staff_profiles?user_id=eq.${encodeURIComponent(session.user.id)}&active=eq.true&select=user_id`)
-    if (!profiles.length) {
-      // Same response as a wrong password so outsiders cannot discover which
-      // emails have site accounts; revoke the session that was just issued.
+    if (session.user?.id !== profile.user_id) {
       await revokeSession(session.access_token)
-      security.record(req, 'non-staff-login', 'high', 'Valid non-staff account tried to sign in to the staff portal')
-      recordLoginFailure(req, normalizedEmail)
-      return res.status(401).json({ error: loginFailureMessage })
+      security.record(req, 'staff-login-identity-mismatch', 'high', 'Password sign-in returned a different account than the username')
+      return fail(lockKey)
     }
     if (staffMfaRequired) {
       // Password is correct; the session is only AAL1 and is refused by every
@@ -639,9 +667,9 @@ app.post('/api/staff/login', async (req, res) => {
       const qrCode = typeof enrolled?.totp?.qr_code === 'string' && enrolled.totp.qr_code.startsWith('data:image/svg+xml') ? enrolled.totp.qr_code : null
       return res.json({ mfa: { step: 'enroll', ticket, factorId: enrolled.id, qrCode, secret: enrolled?.totp?.secret ?? null } })
     }
-    loginFailures.delete(normalizedEmail)
-    await audit(req, 'staff.login', { actor: session.user })
-    res.json({ accessToken: session.access_token, email: session.user.email, expiresIn: Number(session.expires_in) || 3600 })
+    loginFailures.delete(lockKey)
+    await audit(req, 'staff.login', { actor: session.user, actorName: profile.display_name })
+    res.json({ accessToken: session.access_token, email: session.user.email, displayName: profile.display_name, username: profile.username, expiresIn: Number(session.expires_in) || 3600 })
   } catch { res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' }) }
 })
 
@@ -657,16 +685,16 @@ app.post('/api/staff/mfa/verify', async (req, res) => {
   let user
   try { user = await supabase('/auth/v1/user', { key: anonKey, token: ticket }) } catch {
     security.record(req, 'invalid-mfa-ticket', 'medium', 'Two-factor step called with an invalid or expired sign-in ticket')
-    return res.status(401).json({ error: 'Your sign-in has expired. Start again with your email and password.' })
+    return res.status(401).json({ error: 'Your sign-in has expired. Start again with your username and password.' })
   }
-  const email = String(user.email ?? '').toLowerCase()
-  if (accountLocked(email)) {
+  const lockKey = user.id
+  if (accountLocked(lockKey)) {
     security.record(req, 'locked-account-attempt', 'medium', 'Two-factor code tried on a locked staff account')
     return res.status(401).json({ error: loginFailureMessage })
   }
   if (!(user.factors ?? []).some((factor) => factor.id === factorId)) {
     security.record(req, 'mfa-factor-mismatch', 'high', 'Two-factor step used a factor that does not belong to the account')
-    return res.status(401).json({ error: 'Your sign-in has expired. Start again with your email and password.' })
+    return res.status(401).json({ error: 'Your sign-in has expired. Start again with your username and password.' })
   }
   let session
   try {
@@ -674,20 +702,23 @@ app.post('/api/staff/mfa/verify', async (req, res) => {
     session = await supabase(`/auth/v1/factors/${encodeURIComponent(factorId)}/verify`, { key: anonKey, token: ticket, method: 'POST', body: { challenge_id: challenge.id, code: code.trim() } })
   } catch (error) {
     if (error.status >= 500 || error.status === 429 || error.name === 'TimeoutError') return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' })
-    recordLoginFailure(req, email)
+    recordLoginFailure(req, lockKey)
     return res.status(401).json({ error: 'That code is not correct. Codes change every 30 seconds, so check your authenticator app and try again.' })
   }
-  loginFailures.delete(email)
-  await audit(req, 'staff.login', { actor: session.user ?? user, detail: { mfa: true } })
-  res.json({ accessToken: session.access_token, email: session.user?.email ?? user.email, expiresIn: Number(session.expires_in) || 3600 })
+  loginFailures.delete(lockKey)
+  let profile = null
+  try { profile = await loadStaffProfile(user.id) } catch { /* name is cosmetic; sign-in still succeeds */ }
+  await audit(req, 'staff.login', { actor: session.user ?? user, actorName: profile?.display_name, detail: { mfa: true } })
+  res.json({ accessToken: session.access_token, email: session.user?.email ?? user.email, displayName: profile?.display_name ?? null, username: profile?.username ?? null, expiresIn: Number(session.expires_in) || 3600 })
 })
 
 // Append-only record of staff actions (migration 005). Never blocks the action
 // itself: if the write fails, the failure is logged loudly for follow-up.
-async function audit(req, action, { actor = req.staffUser, entityType = null, entityId = null, detail = {} } = {}) {
+async function audit(req, action, { actor = req.staffUser, actorName = req.staffProfile?.display_name, entityType = null, entityId = null, detail = {} } = {}) {
   const entry = {
     actor_user_id: actor?.id ?? null,
     actor_email: actor?.email ? String(actor.email).slice(0, 254) : null,
+    actor_name: actorName ? String(actorName).slice(0, 80) : null,
     action,
     entity_type: entityType,
     entity_id: entityId ? String(entityId).slice(0, 64) : null,
@@ -712,7 +743,7 @@ app.post('/api/staff/logout', requireStaff, async (req, res) => {
   res.json({ ok: true })
 })
 
-app.get('/api/staff/me', requireStaff, (req, res) => res.json({ email: req.staffUser.email }))
+app.get('/api/staff/me', requireStaff, (req, res) => res.json({ email: req.staffUser.email, displayName: req.staffProfile.display_name, username: req.staffProfile.username }))
 app.get('/api/staff/vacancies', requireStaff, async (_req, res) => {
   try {
     const rows = await supabase('/rest/v1/vacancies?select=*&order=created_at.desc')
@@ -742,7 +773,7 @@ app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
 })
 app.get('/api/staff/audit', requireStaff, async (_req, res) => {
   try {
-    const entries = await supabase('/rest/v1/staff_audit_log?select=occurred_at,actor_email,action,entity_type,entity_id,detail&order=occurred_at.desc&limit=500')
+    const entries = await supabase('/rest/v1/staff_audit_log?select=occurred_at,actor_email,actor_name,action,entity_type,entity_id,detail&order=occurred_at.desc&limit=500')
     res.json({ entries })
   } catch { res.status(502).json({ error: 'The activity log could not be loaded.' }) }
 })

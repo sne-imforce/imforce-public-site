@@ -24,6 +24,9 @@ const formatWhen = (value: string) => new Intl.DateTimeFormat('en-ZA', {
 
 type Row = StaffAuditEntry & { rowKey: string }
 
+// Agent name for new entries; email for entries recorded before names existed.
+const actorLabel = (entry: StaffAuditEntry) => entry.actor_name || entry.actor_email || 'Unknown'
+
 const itemText = (entry: StaffAuditEntry) => (typeof entry.detail?.title === 'string' ? entry.detail.title : '')
 const detailText = (entry: StaffAuditEntry) => {
   const changed = entry.detail?.changedFields
@@ -56,12 +59,15 @@ export default function AuditLogPage() {
   }, [])
 
   const rows = entries ?? []
-  const staffOptions = [...new Set(rows.map((row) => row.actor_email).filter((email): email is string => Boolean(email)))]
-    .sort().map((email) => ({ value: email, label: email }))
+  const staffOptions = [...new Set(rows.map(actorLabel).filter((name) => name !== 'Unknown'))]
+    .sort().map((name) => ({ value: name, label: name }))
 
   const columns: Array<Column<Row>> = [
     { key: 'when', header: 'When', sortValue: (row) => Date.parse(row.occurred_at) || 0, render: (row) => <time dateTime={row.occurred_at}>{formatWhen(row.occurred_at)}</time> },
-    { key: 'who', header: 'Staff member', sortValue: (row) => row.actor_email ?? '', render: (row) => row.actor_email ?? 'Unknown' },
+    {
+      key: 'who', header: 'Staff member', sortValue: (row) => actorLabel(row),
+      render: (row) => <><span className="admin-cell__title">{actorLabel(row)}</span>{row.actor_name && row.actor_email && <span className="admin-cell__sub">{row.actor_email}</span>}</>,
+    },
     {
       key: 'action', header: 'Action', sortValue: (row) => actionLabels[row.action] ?? row.action,
       render: (row) => <span className={`admin-badge${actionTone[row.action] ? ` admin-badge--${actionTone[row.action]}` : ''}`}>{actionLabels[row.action] ?? row.action}</span>,
@@ -72,7 +78,7 @@ export default function AuditLogPage() {
 
   const filters: Array<Filter<Row>> = [
     { id: 'action', label: 'Action', options: Object.entries(actionLabels).map(([value, label]) => ({ value, label })), matches: (row, value) => row.action === value },
-    { id: 'who', label: 'Staff member', options: staffOptions, matches: (row, value) => row.actor_email === value },
+    { id: 'who', label: 'Staff member', options: staffOptions, matches: (row, value) => actorLabel(row) === value },
   ]
 
   return (
@@ -97,7 +103,7 @@ export default function AuditLogPage() {
             rows={rows}
             columns={columns}
             rowId={(row) => row.rowKey}
-            searchText={(row) => [row.actor_email, actionLabels[row.action], itemText(row), detailText(row)].join(' ')}
+            searchText={(row) => [row.actor_name, row.actor_email, actionLabels[row.action], itemText(row), detailText(row)].join(' ')}
             searchPlaceholder="Search staff, action, job post…"
             filters={filters}
             initialSort={{ key: 'when', direction: 'desc' }}

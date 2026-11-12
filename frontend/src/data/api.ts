@@ -33,11 +33,11 @@ export const verifyPaystackPayment = (reference: string) =>
   request<{ paid: true; message: string }>('/payments/paystack/verify', {
     method: 'POST', body: JSON.stringify({ reference }),
   })
-export type StaffSession = { accessToken: string; email: string; expiresIn?: number }
+export type StaffSession = { accessToken: string; email: string; displayName?: string | null; username?: string | null; expiresIn?: number }
 export type StaffMfaStep = { step: 'enroll' | 'verify'; ticket: string; factorId: string; qrCode?: string | null; secret?: string | null }
-export const staffLogin = (email: string, password: string) =>
+export const staffLogin = (username: string, password: string) =>
   request<StaffSession & { mfa?: undefined } | { mfa: StaffMfaStep; accessToken?: undefined }>('/staff/login', {
-    method: 'POST', body: JSON.stringify({ email, password }),
+    method: 'POST', body: JSON.stringify({ username, password }),
   })
 export const verifyStaffMfa = (ticket: string, factorId: string, code: string) =>
   request<StaffSession>('/staff/mfa/verify', {
@@ -77,7 +77,7 @@ export function saveStaffToken(token: string | null, expiresInSeconds = 3600) {
 const staffHeaders = () => ({ Authorization: `Bearer ${getStaffToken() ?? ''}` })
 export const getStaffVacancies = () => request<{ vacancies: Vacancy[] }>('/staff/vacancies', { headers: staffHeaders() })
 export const staffLogout = () => request<{ ok: true }>('/staff/logout', { method: 'POST', headers: staffHeaders(), body: '{}' })
-export const getStaffIdentity = () => request<{ email: string }>('/staff/me', { headers: staffHeaders() })
+export const getStaffIdentity = () => request<{ email: string; displayName: string | null; username: string | null }>('/staff/me', { headers: staffHeaders() })
 
 export type StaffInquiry = {
   id: string
@@ -94,6 +94,7 @@ export type StaffInquiry = {
 export type StaffAuditEntry = {
   occurred_at: string
   actor_email: string | null
+  actor_name?: string | null
   action: string
   entity_type: string | null
   entity_id: string | null

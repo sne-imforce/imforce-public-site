@@ -7,7 +7,7 @@ const { call, stop, state, settle, MFA_TICKET, MFA_SESSION, MFA_CODE, VALID_TOKE
 
 test.after(stop)
 
-const signIn = (ip) => call('/api/staff/login', { method: 'POST', ip, body: { email: 'mfa.staff@imforce.co.za', password: 'correct-horse' } })
+const signIn = (ip) => call('/api/staff/login', { method: 'POST', ip, body: { username: 'mfa.staff', password: 'correct-horse' } })
 
 test('first sign-in requires authenticator enrolment; the password alone grants no access', async () => {
   const res = await signIn()

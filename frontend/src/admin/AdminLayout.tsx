@@ -21,7 +21,7 @@ const tabs = [
 
 /** Signed-in shell for /admin: header, tab navigation and shared data. */
 export default function AdminLayout() {
-  const [staffEmail, setStaffEmail] = useState<string | null>(null)
+  const [staffName, setStaffName] = useState<string | null>(null)
   const [checking, setChecking] = useState(() => Boolean(getStaffToken()))
   const [notice, setNotice] = useState('')
   const [loginKey, setLoginKey] = useState(0)
@@ -38,7 +38,7 @@ export default function AdminLayout() {
 
   const resetAccess = useCallback((message = '') => {
     saveStaffToken(null)
-    setStaffEmail(null)
+    setStaffName(null)
     setInquiries([])
     setNotice(message)
     setLoginKey((key) => key + 1)
@@ -50,7 +50,7 @@ export default function AdminLayout() {
     void getStaffIdentity()
       .then(async (identity) => {
         await loadStaffVacancies()
-        setStaffEmail(identity.email)
+        setStaffName(identity.displayName || identity.email)
         await reloadInquiries()
       })
       .catch(() => saveStaffToken(null))
@@ -61,7 +61,7 @@ export default function AdminLayout() {
 
   // Sign out automatically after inactivity or when the token expires.
   useEffect(() => {
-    if (!staffEmail) return
+    if (!staffName) return
     let idleTimer = 0
     const expireIdle = () => {
       void staffLogout().catch(() => undefined)
@@ -80,7 +80,7 @@ export default function AdminLayout() {
       window.clearTimeout(expiryTimer)
       events.forEach((name) => window.removeEventListener(name, resetIdle))
     }
-  }, [staffEmail, resetAccess])
+  }, [staffName, resetAccess])
 
   useEffect(() => {
     if (!snackbar) return
@@ -92,7 +92,7 @@ export default function AdminLayout() {
     saveStaffToken(session.accessToken, session.expiresIn)
     await loadStaffVacancies()
     setNotice('')
-    setStaffEmail(session.email)
+    setStaffName(session.displayName || session.email)
     await reloadInquiries()
   }
 
@@ -102,11 +102,11 @@ export default function AdminLayout() {
     resetAccess()
   }
 
-  if (checking && !staffEmail) {
+  if (checking && !staffName) {
     return <main className="staff-access-page"><p className="admin-loading" role="status">Loading the staff workspace…</p></main>
   }
 
-  if (!staffEmail) {
+  if (!staffName) {
     return (
       <main className="staff-access-page">
         <div className="staff-access-page__shell">
@@ -116,7 +116,7 @@ export default function AdminLayout() {
     )
   }
 
-  const context: AdminContext = { staffEmail, inquiries, inquiriesError, reloadInquiries, notify: setSnackbar }
+  const context: AdminContext = { staffName, inquiries, inquiriesError, reloadInquiries, notify: setSnackbar }
 
   return (
     <main className="staff-access-page admin">
@@ -124,7 +124,7 @@ export default function AdminLayout() {
         <header className="admin__header">
           <div>
             <p className="staff-access-eyebrow">Recruiter workspace</p>
-            <p className="admin__signed-in">Signed in as <strong>{staffEmail}</strong></p>
+            <p className="admin__signed-in">Signed in as <strong>{staffName}</strong></p>
           </div>
           <div className="admin__header-actions">
             <Link className="admin__button" to="/"><FiHome aria-hidden="true" /> Home</Link>

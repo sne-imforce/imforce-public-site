@@ -109,7 +109,7 @@ test('staff can create a vacancy; unsafe application URLs are refused', async ()
 })
 
 test('staff sign-in succeeds with valid credentials and sign-out revokes the session', async () => {
-  const res = await call('/api/staff/login', { method: 'POST', body: { email: 'Staff@IMFORCE.co.za ', password: 'correct-horse' } })
+  const res = await call('/api/staff/login', { method: 'POST', body: { username: ' Staff ', password: 'correct-horse' } })
   assert.equal(res.status, 200)
   assert.equal(res.data.accessToken, VALID_TOKEN)
   const out = await call('/api/staff/logout', { method: 'POST', body: {}, headers: { Authorization: `Bearer ${VALID_TOKEN}` } })
@@ -117,21 +117,49 @@ test('staff sign-in succeeds with valid credentials and sign-out revokes the ses
   assert.ok(state.calls.some((c) => c.path === '/auth/v1/logout' && c.auth === `Bearer ${VALID_TOKEN}`))
 })
 
-test('non-staff accounts get the same answer as a wrong password (no account enumeration)', async () => {
-  const wrong = await call('/api/staff/login', { method: 'POST', body: { email: 'nobody@example.com', password: 'guess' } })
-  const outsider = await call('/api/staff/login', { method: 'POST', body: { email: 'outsider@example.com', password: 'correct-horse' } })
+test('unknown usernames get the same answer and timing as a wrong password (no username enumeration)', async () => {
+  const grantsBefore = state.calls.filter((c) => c.path === '/auth/v1/token').length
+  let started = Date.now()
+  const unknown = await call('/api/staff/login', { method: 'POST', body: { username: 'outsider', password: 'correct-horse' } })
+  const unknownMs = Date.now() - started
+  assert.equal(state.calls.filter((c) => c.path === '/auth/v1/token').length, grantsBefore, 'no password check (and no session) for a username that is not staff')
+  started = Date.now()
+  const wrong = await call('/api/staff/login', { method: 'POST', body: { username: 'second.staff', password: 'wrong-password' } })
+  const wrongMs = Date.now() - started
+  assert.equal(unknown.status, 401)
   assert.equal(wrong.status, 401)
-  assert.equal(outsider.status, 401)
-  assert.deepEqual(outsider.data, wrong.data)
-  assert.ok(state.calls.some((c) => c.path === '/auth/v1/logout' && c.auth === `Bearer ${OUTSIDER_TOKEN}`), 'outsider session must be revoked')
+  assert.deepEqual(unknown.data, wrong.data)
+  assert.ok(unknownMs >= 550 && wrongMs >= 550, `both failures are padded (${unknownMs} ms, ${wrongMs} ms)`)
+})
+
+test('sign-in uses the username, authenticates with the email on file, and returns the agent name', async () => {
+  const res = await call('/api/staff/login', { method: 'POST', body: { username: 'second.staff', password: 'correct-horse' } })
+  assert.equal(res.status, 200)
+  assert.equal(state.lastPasswordGrantEmail, 'second.staff@imforce.co.za')
+  assert.equal(res.data.displayName, 'Sipho Dlamini')
+  assert.equal(res.data.username, 'second.staff')
+  const me = await call('/api/staff/me', { headers: { Authorization: `Bearer ${VALID_TOKEN}` } })
+  assert.equal(me.data.displayName, 'Thandi Mokoena')
+})
+
+test('an email address in the username box is refused (staff sign in with usernames only)', async () => {
+  const res = await call('/api/staff/login', { method: 'POST', body: { username: 'staff@imforce.co.za', password: 'correct-horse' } })
+  assert.equal(res.status, 401)
+  assert.match(res.data.error, /Username or password is incorrect/)
+})
+
+test('missing or oversized credentials are rejected with 400', async () => {
+  for (const body of [{ password: 'x' }, { username: 'staff' }, { username: 'x'.repeat(65), password: 'x' }, { username: ['staff'], password: 'x' }]) {
+    assert.equal((await call('/api/staff/login', { method: 'POST', body })).status, 400, JSON.stringify(body))
+  }
 })
 
 test('account locks after 5 failures even when attempts come from different IPs', async () => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const res = await call('/api/staff/login', { method: 'POST', body: { email: 'staff@imforce.co.za', password: `guess-${attempt}` } })
+    const res = await call('/api/staff/login', { method: 'POST', body: { username: 'staff', password: `guess-${attempt}` } })
     assert.equal(res.status, 401)
   }
-  const correctButLocked = await call('/api/staff/login', { method: 'POST', body: { email: 'staff@imforce.co.za', password: 'correct-horse' } })
+  const correctButLocked = await call('/api/staff/login', { method: 'POST', body: { username: 'staff', password: 'correct-horse' } })
   assert.equal(correctButLocked.status, 401)
   await settle()
   assert.ok(state.alerts.some((alert) => alert.event.type === 'staff-account-locked'))
@@ -202,7 +230,7 @@ test('public write endpoints are rate limited with Retry-After', async () => {
 test('staff actions are written to the audit log with actor, entity and changed fields', async () => {
   const auth = { Authorization: `Bearer ${VALID_TOKEN}` }
   const before = state.audit.length
-  await call('/api/staff/login', { method: 'POST', body: { email: 'auditor-check@imforce.co.za', password: 'nope' } })
+  await call('/api/staff/login', { method: 'POST', body: { username: 'auditor-check', password: 'nope' } })
   assert.equal(state.audit.length, before, 'failed sign-ins go to security_events, not the staff audit log')
 
   const vacancy = { clientName: 'Audit Client', title: 'Audit Clerk', location: 'Durban', region: 'KZN', category: 'Admin', employmentType: 'Permanent', summary: 'Audit role', responsibilities: ['Filing'] }
@@ -217,6 +245,7 @@ test('staff actions are written to the audit log with actor, entity and changed 
   assert.deepEqual(entries.map((entry) => entry.action), ['vacancy.create', 'vacancy.update', 'enquiries.view', 'vacancy.delete'])
   for (const entry of entries) {
     assert.equal(entry.actor_email, 'staff@imforce.co.za')
+    assert.equal(entry.actor_name, 'Thandi Mokoena')
     assert.ok(entry.ip_address)
   }
   assert.deepEqual(entries[1].detail.changedFields.sort(), ['salary', 'title'])
@@ -230,7 +259,7 @@ test('staff actions are written to the audit log with actor, entity and changed 
 
 test('sign-in and sign-out are audited', async () => {
   const before = state.audit.length
-  const login = await call('/api/staff/login', { method: 'POST', body: { email: 'second.staff@imforce.co.za', password: 'correct-horse' } })
+  const login = await call('/api/staff/login', { method: 'POST', body: { username: 'second.staff', password: 'correct-horse' } })
   assert.equal(login.status, 200)
   await call('/api/staff/logout', { method: 'POST', body: {}, headers: { Authorization: `Bearer ${VALID_TOKEN}` } })
   assert.deepEqual(state.audit.slice(before).map((entry) => entry.action), ['staff.login', 'staff.logout'])

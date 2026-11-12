@@ -20,12 +20,12 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
     event.preventDefault()
     if (busy) return
     const formData = new FormData(event.currentTarget)
-    const email = String(formData.get('email') ?? '').trim().toLowerCase()
+    const username = String(formData.get('username') ?? '').trim().toLowerCase()
     const password = String(formData.get('password') ?? '')
     setBusy(true)
     setError('')
     try {
-      const result = await staffLogin(email, password)
+      const result = await staffLogin(username, password)
       if (result.mfa) setMfaStep(result.mfa)
       else await onSignedIn(result)
     } catch (cause) {
@@ -96,8 +96,17 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
       ) : (
         <form key="password-step" className="staff-access-form" onSubmit={handleLogin}>
           <label>
-            Company email
-            <input name="email" type="email" autoComplete="email" required />
+            Username
+            <input
+              name="username"
+              type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={32}
+              required
+            />
           </label>
           <label>
             Password
