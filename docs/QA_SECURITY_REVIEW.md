@@ -162,7 +162,7 @@ All results were reproduced in the final QA pass. Commands:
 | API and security unit/integration | `cd backend && npm test` | **43 / 43 passed** (including 8 MFA and 2 audit-log tests) |
 | Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **29 / 29 passed**; migrations 001–005 re-run safely |
 | Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **73 / 73 passed** |
-| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **37 / 37 passed**: tabs, paging, search, sort, filters, expand, edit, delete, deep links, phone card layout |
+| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **44 / 44 passed**: tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
 | Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |
 | Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |
 | Live server smoke | `npm start`: health, honeypot alarm, access log, SIGTERM | Pass |

@@ -640,3 +640,122 @@
     justify-content: center;
   }
 }
+
+/* Confirmation modal */
+.confirm-dialog {
+  width: min(440px, calc(100% - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgb(0 26 64 / 28%);
+  color: #15191f;
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(0 26 64 / 45%);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-dialog[open] {
+  animation: confirm-dialog-in 160ms ease-out;
+}
+
+@keyframes confirm-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.confirm-dialog__panel {
+  padding: 28px 28px 24px;
+  text-align: center;
+}
+
+.confirm-dialog__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: #fde8e8;
+  color: #a12828;
+  font-size: 24px;
+}
+
+.confirm-dialog h2 {
+  margin: 0 0 10px;
+  color: var(--color-primary);
+  font: 700 20px/1.3 var(--font-heading);
+}
+
+.confirm-dialog__body p {
+  margin: 0 0 10px;
+  color: var(--color-muted);
+  font: 500 14px/1.55 var(--font-interface);
+}
+
+.confirm-dialog__body .confirm-dialog__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgb(1 46 111 / 10%);
+  border-radius: 12px;
+  background: #f5f8fc;
+}
+
+.confirm-dialog__item strong {
+  color: var(--color-primary);
+  font-size: 15px;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.confirm-dialog__actions button {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.confirm-dialog__confirm {
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #b42323;
+  color: #fff;
+  font: 700 14px/1.2 var(--font-interface);
+  cursor: pointer;
+}
+
+.confirm-dialog__confirm:hover:not(:disabled) {
+  background: #951b1b;
+}
+
+.confirm-dialog button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.confirm-dialog button:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-dialog[open] {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .confirm-dialog__actions {
+    flex-direction: column-reverse;
+  }
+}

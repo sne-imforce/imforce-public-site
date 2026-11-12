@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { StaffInquiry } from '../data/api'
 import { deleteRecruiterVacancy, useRecruiterVacancies, type RecruiterVacancy } from '../data/recruiterVacancies'
 import { formatDateDmy } from '../utils/dates'
+import ConfirmDialog from './ConfirmDialog'
 import DataTable, { type Column, type Filter } from './DataTable'
 import { useAdmin } from './adminContext'
 
@@ -109,13 +110,24 @@ export default function InventoryPage() {
     ]
   }, [vacancies, enquiryRows, today, now])
 
-  const handleDelete = async (vacancy: RecruiterVacancy) => {
-    if (!window.confirm(`Delete “${vacancy.title}”? It will be removed from the public careers page.`)) return
+  const [pendingDelete, setPendingDelete] = useState<RecruiterVacancy | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  const askToDelete = (vacancy: RecruiterVacancy) => { setDeleteError(''); setPendingDelete(vacancy) }
+  const cancelDelete = () => { if (!deleting) setPendingDelete(null) }
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleting) return
+    setDeleting(true)
+    setDeleteError('')
     try {
-      await deleteRecruiterVacancy(vacancy.id)
-      notify(`“${vacancy.title}” was deleted.`)
+      await deleteRecruiterVacancy(pendingDelete.id)
+      notify(`“${pendingDelete.title}” was deleted.`)
+      setPendingDelete(null)
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'The job post could not be deleted.')
+      setDeleteError(error instanceof Error ? error.message : 'The vacancy could not be deleted. Please try again.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -205,7 +217,7 @@ export default function InventoryPage() {
               <button type="button" onClick={() => navigate(`/admin/jobs?edit=${encodeURIComponent(row.id)}`)} aria-label={`Edit ${row.title}`} title="Edit">
                 <FiEdit3 aria-hidden="true" />
               </button>
-              <button type="button" onClick={() => { void handleDelete(row) }} aria-label={`Delete ${row.title}`} title="Delete">
+              <button type="button" onClick={() => askToDelete(row)} aria-label={`Delete ${row.title}`} title="Delete">
                 <FiTrash2 aria-hidden="true" />
               </button>
             </span>
@@ -234,6 +246,27 @@ export default function InventoryPage() {
           renderDetails={(row) => <EnquiryDetails row={row} />}
         />
       </section>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete this vacancy from the recruiter dashboard?"
+        confirmLabel="Delete vacancy"
+        busyLabel="Deleting…"
+        busy={deleting}
+        error={deleteError}
+        onConfirm={() => { void confirmDelete() }}
+        onCancel={cancelDelete}
+      >
+        {pendingDelete && (
+          <>
+            <p className="confirm-dialog__item">
+              <strong>{pendingDelete.title}</strong>
+              <span>{[pendingDelete.clientName, pendingDelete.location].filter(Boolean).join(' · ')}</span>
+            </p>
+            <p>It will also be removed from the public careers page. This cannot be undone.</p>
+          </>
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

@@ -238,7 +238,7 @@ sequenceDiagram
 - Buttons show a busy state while a request is in flight, which prevents double submission.
 - Error messages are written for end users ("Check your internet connection…") and never contain technical details.
 - The `/admin` link is a small gear icon in the footer, kept out of the main navigation.
-- Staff workspace tables (job posts, enquiries, audit log) share one `DataTable` component: a search box, a filter for each useful column, sortable column headers (with `aria-sort`), and 10 rows per page with ‹ › buttons and a "Showing 11–20 of 47" count. Enquiry rows expand to show full details and a reply link. Below 760 px wide, each row becomes a labelled card, so nothing is squeezed.
+- Staff workspace tables (job posts, enquiries, audit log) share one `DataTable` component: a search box, a filter for each useful column, sortable column headers (with `aria-sort`), and 10 rows per page with ‹ › buttons and a "Showing 11–20 of 47" count. Enquiry rows expand to show full details and a reply link. Deleting a job post asks for confirmation in a modal that names the vacancy; focus starts on Cancel, Escape or Cancel deletes nothing, and a failed delete shows its error inside the modal. Native browser `confirm()` boxes are not used. Below 760 px wide, each row becomes a labelled card, so nothing is squeezed.
 - Accessibility: every page passes an automated axe-core audit (WCAG 2.1 AA and best practices) on desktop and mobile. Accent text uses `--color-accent-text` (#296fb0), which meets 4.5:1 contrast on all light backgrounds; keep using it for text instead of `--color-accent`.
 
 ### Frontend security controls

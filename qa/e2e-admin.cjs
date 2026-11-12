@@ -29,7 +29,10 @@ async function setup(page, state) {
     if (u === '/api/staff/login') return j({ accessToken: 'a.b.c', email: 'staff@imforce.co.za', expiresIn: 3600 })
     if (u === '/api/staff/inquiries') return j({ inquiries })
     if (u === '/api/staff/audit') return j({ entries: audit })
-    if (u.startsWith('/api/staff/vacancies/') && m === 'DELETE') { state.deleted = u; return j({ ok: true }) }
+    if (u.startsWith('/api/staff/vacancies/') && m === 'DELETE') {
+      if (state.failDelete) return j({ error: 'Vacancy could not be deleted.' }, 502)
+      state.deleted = u; return j({ ok: true })
+    }
     if (u.startsWith('/api/staff/vacancies/') && m === 'PUT') { state.put = route.request().postDataJSON(); return j({ vacancy: { ...vacancies[0], ...state.put, id: u.split('/').pop() } }) }
     if (u === '/api/staff/me') return j({ email: 'staff@imforce.co.za' })
     return j({ vacancies })
@@ -45,7 +48,7 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
 ;(async () => {
   const b = await chromium.launch()
   const page = await b.newPage({ viewport: { width: 1366, height: 900 } }); const state = {}
-  page.on('dialog', (d) => d.accept())
+  let nativeDialog = false; page.on('dialog', (d) => { nativeDialog = true; d.dismiss() })
   const errors = []; page.on('pageerror', (e) => errors.push(String(e))); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
   await setup(page, state)
   ok('tabs: Inventory, Job posts, Audit log + Home + Sign out', await page.locator('.admin__tab').count() === 3 && await page.locator('.admin__header').getByRole('link', { name: 'Home' }).isVisible() && await page.getByRole('button', { name: 'Sign out' }).isVisible())
@@ -90,9 +93,29 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
   ok('enquiries: stored HTML rendered as text', await enq(page).getByText('<b>Message 1</b>').count() + await enq(page).locator('.data-table__details-row').getByText(/Message|Company/).count() > 0)
   
 
+  // Delete confirmation modal
+  const modal = page.getByRole('dialog', { name: 'Delete this vacancy from the recruiter dashboard?' })
+  const target = (await rowsIn(jobs(page)).first().locator('.admin-cell__title').innerText()).trim()
   await rowsIn(jobs(page)).first().getByRole('button', { name: /^Delete/ }).click()
-  await page.waitForTimeout(200)
-  ok('delete asks for confirmation and calls API', Boolean(state.deleted))
+  await modal.waitFor()
+  ok('delete opens a modal naming the vacancy', (await modal.innerText()).includes(target))
+  ok('modal focus starts on Cancel (safe default)', await page.evaluate(() => document.activeElement?.textContent?.trim()) === 'Cancel')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(150)
+  ok('Escape closes the modal without deleting', !(await modal.isVisible()) && !state.deleted)
+  await rowsIn(jobs(page)).first().getByRole('button', { name: /^Delete/ }).click()
+  await modal.getByRole('button', { name: 'Cancel' }).click()
+  ok('Cancel closes the modal without deleting', !(await modal.isVisible()) && !state.deleted)
+  state.failDelete = true
+  await rowsIn(jobs(page)).first().getByRole('button', { name: /^Delete/ }).click()
+  await modal.getByRole('button', { name: 'Delete vacancy' }).click()
+  await modal.getByRole('alert').waitFor()
+  ok('a failed delete keeps the modal open with the error', await modal.isVisible() && (await modal.getByRole('alert').innerText()).includes('could not be deleted'))
+  state.failDelete = false
+  await modal.getByRole('button', { name: 'Delete vacancy' }).click()
+  await modal.waitFor({ state: 'hidden' })
+  ok('confirming deletes, closes the modal and confirms', Boolean(state.deleted) && await page.locator('.staff-access-snackbar').getByText('was deleted').isVisible())
+  ok('deleted vacancy is gone from the table', !(await rowsIn(jobs(page)).allInnerTexts()).some((t) => t.startsWith(target + '\n')))
   await rowsIn(jobs(page)).first().getByRole('button', { name: /^Edit/ }).click()
   await page.getByRole('heading', { name: 'Edit job post' }).waitFor()
   ok('edit opens Job posts tab with ?edit=', page.url().includes('/admin/jobs?edit=') && (await page.locator('.admin__tab.is-active').textContent()).includes('Job posts'))
@@ -125,7 +148,9 @@ const rowsIn = (s) => s.locator('tbody tr:not(.data-table__details-row):not(.dat
   ok('admin subpages are noindex', (await page.locator('meta[name=robots]').getAttribute('content')).startsWith('noindex'))
   await page.goto((process.env.E2E_BASE_URL || 'http://localhost:4173') + '/admin/audit'); await page.getByRole('heading', { name: 'Audit log' }).waitFor()
   ok('deep link to /admin/audit works after refresh', (await page.locator('meta[name=robots]').getAttribute('content')).startsWith('noindex'))
-  ok('no JS errors on desktop', errors.length === 0, errors.join(' | ').slice(0, 200))
+  ok('no native browser confirm() boxes used', !nativeDialog)
+  { const unexpected = errors.filter((e) => !/status of 502/.test(e)) // the 502 is the simulated failed delete
+  ok('no JS errors on desktop', unexpected.length === 0, unexpected.join(' | ').slice(0, 200)) }
 
   const m = await b.newPage({ ...devices['iPhone 13'] }); m.on('dialog', (d) => d.accept()); await setup(m, {})
   const overflow = await m.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
