@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FiCheckCircle } from 'react-icons/fi'
+import { FiCheck, FiPhone } from 'react-icons/fi'
 import { Link, useSearchParams } from 'react-router-dom'
 import DatePicker from '../../../components/ui/DatePicker'
 import { initializePaystackCheckout, resumePaystackCheckout, verifyPaystackPayment, type ApiError } from '../../../data/api'
@@ -198,7 +198,7 @@ function Employers() {
   const [paymentNotice, setPaymentNotice] = useState('')
   // Shown after Paystack returns and the payment is confirmed; stays until dismissed.
   const [paymentConfirmed, setPaymentConfirmed] = useState<{ reference: string } | null>(null)
-  const confirmationRef = useRef<HTMLElement>(null)
+  const confirmationRef = useRef<HTMLDialogElement>(null)
   const paymentReference = searchParams.get('reference') ?? searchParams.get('trxref')
   const [initialDraft] = useState(readStoredDraft)
   const [closingDate, setClosingDate] = useState(
@@ -217,9 +217,11 @@ function Employers() {
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
-    if (!paymentConfirmed) return
-    confirmationRef.current?.scrollIntoView({ block: 'start' })
-    confirmationRef.current?.focus({ preventScroll: true })
+    const dialog = confirmationRef.current
+    if (!paymentConfirmed || !dialog || dialog.open) return
+    dialog.showModal()
+    // Start on "Done" (the browser would otherwise focus the phone link).
+    dialog.querySelector<HTMLButtonElement>('.employers-paid__actions button')?.focus()
   }, [paymentConfirmed])
 
   useEffect(() => {
@@ -372,30 +374,37 @@ function Employers() {
   return (
     <>
       <Navbar />
+      {paymentConfirmed && (
+        <dialog
+          ref={confirmationRef}
+          className="employers-paid"
+          aria-labelledby="employers-paid-title"
+          onClose={() => setPaymentConfirmed(null)}
+        >
+          <div className="employers-paid__card">
+            <span className="employers-paid__icon" aria-hidden="true"><FiCheck /></span>
+            <h2 id="employers-paid-title">Payment received. Thank you!</h2>
+            <p className="employers-paid__lead">Your job order is now with the IMFORCE team.</p>
+            <p className="employers-paid__reference">
+              <span>Your job order reference</span>
+              <strong>{paymentConfirmed.reference}</strong>
+            </p>
+            <h3>What happens next</h3>
+            <ol className="employers-paid__steps">
+              <li><strong>Within 1 business day</strong> we review your advert.</li>
+              <li>We email you when it is live, or a private link if anything needs to change. You do not pay again.</li>
+              <li>Paystack emails your proof of payment.</li>
+            </ol>
+            <p className="employers-paid__help">
+              <FiPhone aria-hidden="true" /> <span>Questions? Call <a href="tel:0334920600">033 492 0600</a>.</span>
+            </p>
+            <form method="dialog" className="employers-paid__actions">
+              <button type="submit" className="employers-button employers-button--primary">Done</button>
+            </form>
+          </div>
+        </dialog>
+      )}
       <main className="employers-page">
-        {paymentConfirmed && (
-          <section ref={confirmationRef} tabIndex={-1} className="employers-confirmation" role="status" aria-labelledby="employers-confirmation-title">
-            <div className="employers-shell employers-confirmation__inner">
-              <FiCheckCircle className="employers-confirmation__icon" aria-hidden="true" />
-              <div>
-                <h2 id="employers-confirmation-title">Payment received. Thank you!</h2>
-                <p className="employers-confirmation__reference">
-                  Your job order reference is <strong>{paymentConfirmed.reference}</strong>. Keep it for any questions.
-                </p>
-                <h3>What happens next</h3>
-                <ol>
-                  <li><strong>Within 1 business day</strong>, an IMFORCE team member reviews your advert.</li>
-                  <li>We email you as soon as it is live on our careers page. If anything needs to change, we email you a private link to update it. You do not pay again.</li>
-                  <li>Paystack emails your proof of payment to your contact email address.</li>
-                </ol>
-                <p>Questions? Call <a href="tel:+27334920600">033 492 0600</a> or reply to our confirmation email.</p>
-                <button type="button" className="employers-button employers-button--secondary" onClick={() => setPaymentConfirmed(null)}>
-                  Submit another job order
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
         <section className="employers-hero" aria-labelledby="employers-title">
           <div className="employers-shell employers-hero__inner">
             <p className="employers-eyebrow">For employers</p>

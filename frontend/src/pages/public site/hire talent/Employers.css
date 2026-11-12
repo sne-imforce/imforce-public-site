@@ -238,28 +238,45 @@
   font: 600 14px/1.55 var(--font-interface);
 }
 
-.employers-confirmation {
-  padding: 28px 0;
-  border-bottom: 1px solid #b8dfca;
-  background: #f1fbf5;
-  color: #174c34;
-  font: 500 16px/1.6 var(--font-interface);
-  scroll-margin-top: 90px;
+.employers-paid {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: #fff;
+  color: #15191f;
+  box-shadow: 0 24px 60px rgb(1 26 64 / 28%);
 }
-.employers-confirmation:focus { outline: none; }
-.employers-confirmation:focus-visible { outline: 3px solid #218354; outline-offset: -3px; }
-.employers-confirmation__inner { display: flex; gap: 18px; align-items: flex-start; }
-.employers-confirmation__icon { flex: 0 0 auto; margin-top: 4px; color: #218354; font-size: 34px; }
-.employers-confirmation h2 { margin: 0 0 6px; color: #0f3d29; font-size: clamp(22px, 3vw, 28px); line-height: 1.25; }
-.employers-confirmation h3 { margin: 18px 0 6px; color: #0f3d29; font-size: 17px; }
-.employers-confirmation p { margin: 0 0 10px; }
-.employers-confirmation ol { margin: 0 0 14px; padding-left: 22px; }
-.employers-confirmation li { margin-bottom: 6px; }
-.employers-confirmation a { color: #0f5c3a; font-weight: 700; }
-.employers-confirmation__reference strong { font-size: 18px; letter-spacing: 0.04em; }
+.employers-paid::backdrop { background: rgb(1 20 48 / 55%); }
+.employers-paid__card { padding: 32px 28px 26px; text-align: center; font: 500 15px/1.6 var(--font-interface); }
+.employers-paid__icon {
+  display: inline-grid; place-items: center; width: 56px; height: 56px; margin-bottom: 14px;
+  border-radius: 50%; background: #e3f4ea; color: #1c6b3c; font-size: 28px;
+}
+.employers-paid h2 { margin: 0 0 6px; color: var(--color-primary); font: 700 clamp(1.3rem, 4vw, 1.6rem)/1.25 var(--font-heading); }
+.employers-paid__lead { margin: 0 0 18px; color: #4a5361; }
+.employers-paid__reference {
+  display: grid; gap: 2px; margin: 0 0 22px; padding: 12px 16px;
+  border: 1px dashed #b8c7dc; border-radius: 12px; background: #f5f8fc;
+}
+.employers-paid__reference span { color: #5b6575; font-size: 13px; }
+.employers-paid__reference strong { color: var(--color-primary); font-size: 20px; letter-spacing: 0.06em; }
+.employers-paid h3 { margin: 0 0 10px; color: #15191f; font: 700 15px/1.4 var(--font-heading); text-align: left; }
+.employers-paid__steps { display: grid; gap: 10px; margin: 0 0 18px; padding: 0; list-style: none; counter-reset: paid-step; text-align: left; }
+.employers-paid__steps li { position: relative; padding-left: 36px; color: #2b3340; counter-increment: paid-step; }
+.employers-paid__steps li::before {
+  content: counter(paid-step); position: absolute; top: 1px; left: 0;
+  display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 50%; background: var(--color-primary); color: #fff; font: 700 12px/1 var(--font-interface);
+}
+.employers-paid__help { display: flex; justify-content: center; align-items: center; gap: 6px; margin: 0 0 18px; color: #4a5361; font-size: 14px; }
+.employers-paid__help a { color: var(--color-primary); font-weight: 700; }
+.employers-paid__actions { margin: 0; }
+.employers-paid__actions .employers-button { width: 100%; justify-content: center; }
 
 @media (max-width: 560px) {
-  .employers-confirmation__inner { flex-direction: column; gap: 8px; }
+  .employers-paid__card { padding: 26px 20px 20px; }
 }
 
 

@@ -5,7 +5,8 @@
  * SMTP_HOST unset  -> email is "not configured"; callers fall back to letting
  *                     staff copy the link and send it themselves.
  * SMTP_HOST=log    -> development only: emails are written to the API log
- *                     instead of being sent (refused in production).
+ *                     instead of being sent (refused in production). They are
+ *                     reported as NOT sent, so staff still get the link to copy.
  * SMTP_HOST=<host> -> sent through that SMTP server (TLS 1.2+ required).
  *
  * Never throws: returns { status: 'sent' | 'failed' | 'not_configured' }.
@@ -65,16 +66,29 @@ function createMailer(env, { logger = (line) => console.log(line) } = {}) {
         if (host === 'log') {
           outbox.push(message)
           if (outbox.length > 50) outbox.shift()
-          logger(`[email:dev] To: ${message.to} | Subject: ${message.subject}\n${text}`)
+          logger(`[email:dev] NOT SENT (SMTP_HOST=log). To: ${message.to} | Subject: ${message.subject}\n${text}`)
+          // Honest status: nothing reached the employer (tests treat it as sent).
+          return { status: env.NODE_ENV === 'test' ? 'sent' : 'not_configured' }
         }
         return { status: 'sent' }
-      } catch {
+      } catch (error) {
+        // Say why, without the message body or any credentials.
+        logger(`[email] FAILED to ${message.to}: ${describeSmtpError(error)}`)
         return { status: 'failed' }
       }
     },
   }
 }
 
+function describeSmtpError(error) {
+  const code = error?.code || 'ERROR'
+  const reply = String(error?.response || error?.message || '').replace(/[\r\n]+/g, ' ').slice(0, 200)
+  const hint = code === 'EAUTH' ? ' (wrong SMTP_USER or SMTP_PASSWORD; many providers need an app password)'
+    : ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS'].includes(code) ? ' (check SMTP_HOST and SMTP_PORT, and that the network allows outgoing SMTP)'
+      : code === 'EENVELOPE' ? ' (the provider refused the sender or recipient; EMAIL_FROM must be an address this account may send as)' : ''
+  return `${code}${reply ? `: ${reply}` : ''}${hint}`
+}
+
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
 
-module.exports = { createMailer, escapeHtml }
+module.exports = { createMailer, escapeHtml, describeSmtpError }

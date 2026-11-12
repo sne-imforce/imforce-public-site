@@ -179,7 +179,7 @@ A payment on an **older** reference of the same order (for example an old Paysta
 
 | Moment | What the employer sees | Email |
 |---|---|---|
-| Paystack returns to `/employers` | A confirmation panel that stays on screen: `ORD-` reference, "within 1 business day", what happens next | **We received your job order** (once, even if the webhook and the return page both confirm) |
+| Paystack returns to `/employers` | A confirmation card that stays on screen until **Done**: `ORD-` reference, "within 1 business day", what happens next | **We received your job order** (once, even if the webhook and the return page both confirm) |
 | Checkout failed or the tab was closed | "Checkout" again pays for the **same** order (with any corrections); no duplicate order | None |
 | Unpaid order, staff follow up | `/employers/complete-payment#token=…`: order summary and **Pay ZAR 499 securely** | **Complete the payment…** (from Advert review → *Send payment link*) |
 | Staff request changes | `/employers/update-job-order#token=…` | **Changes needed…** with the staff message and a private link; no extra payment |
@@ -238,7 +238,7 @@ A payment on an **older** reference of the same order (for example an old Paysta
 | `/` | Home | Hero with role and location search → `/careers` |
 | `/about` | About | Industries dropdown links to `/careers?industry=…` |
 | `/careers` | Careers | Filters saved in `localStorage` (validated on load); vacancy detail; Apply → HTTPS Nexora link only |
-| `/employers` | For Employers | Job-order form with draft autosave (`sessionStorage`), review dialog, Paystack checkout in a new tab. Retrying checkout pays for the same order. After payment, a confirmation panel stays on screen with the `ORD-` reference and next steps. |
+| `/employers` | For Employers | Job-order form with draft autosave (`sessionStorage`), review dialog, Paystack checkout in a new tab. Retrying checkout pays for the same order. After payment, a centred confirmation card (modal) shows the `ORD-` reference and next steps until the employer clicks **Done**. |
 | `/employers/complete-payment#token=…` | Private page from the "Complete the payment" email. Token read from after `#` and removed from the address bar; shows the order summary and a **Pay ZAR 499 securely** button (Paystack). Paid orders say there is nothing more to pay. `noindex`, `no-store`, `no-referrer`. | Employers with the link |
 | `/employers/update-job-order#token=…` | Private page from the "Request changes" email. The token is read from after `#` and removed from the address bar immediately. Shows what IMFORCE asked to change and the job order pre-filled; the contact email and payment data cannot be changed; resubmitting sends the order back for review. `noindex`, `no-store`, `no-referrer`. | Employers with the link |
 | `/services/placements` | Permanent staffing | |
@@ -599,7 +599,7 @@ Job orders are never rejected: if an advert cannot be published as it is, ask fo
 3. Notifications remind you again 2 days after a link was sent if the order is still unpaid.
 4. Refunds are not offered. If an employer paid twice by mistake (for example two separate orders), handle it with Finance in the Paystack dashboard.
 
-To turn on email, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` and `EMAIL_REPLY_TO` (see §12) and restart the API. For a Microsoft 365 or Google Workspace mailbox, use its SMTP settings with an app password.
+To turn on email, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` and `EMAIL_REPLY_TO` (see §12) and restart the API. For a Microsoft 365 or Google Workspace mailbox, use its SMTP settings with an app password. Check them with `cd backend && npm run email:test -- you@example.com`, which sends one test email and explains any failure (wrong password, blocked port, refused sender). On start-up the API prints whether employer emails are really being sent. With `SMTP_HOST=log` emails are only printed in the API terminal and are reported as **not** sent, so staff get the copy-link box.
 
 ### 17.8 Check who changed or deleted something
 

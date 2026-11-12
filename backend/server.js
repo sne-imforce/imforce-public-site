@@ -55,6 +55,7 @@ if (process.env.NODE_ENV === 'production') {
   try { if (new URL(publicSiteUrl).protocol !== 'https:') throw new Error() }
   catch { throw new Error('PUBLIC_SITE_URL (or the first FRONTEND_ORIGIN) must be an HTTPS URL for links in emails.') }
   if (!mailer.configured) console.warn('WARNING: SMTP_HOST is not set. Employer emails are not sent; staff will be given links to send themselves.')
+  else if (mailer.mode === 'log') console.warn('WARNING: SMTP_HOST=log. Employer emails are only printed here, NOT sent; staff will be given links to send themselves. Set real SMTP settings to email employers.')
   if (securityAlertWebhookUrl) {
     try { if (new URL(securityAlertWebhookUrl).protocol !== 'https:') throw new Error() }
     catch { throw new Error('SECURITY_ALERT_WEBHOOK_URL must be an HTTPS URL.') }
@@ -1336,7 +1337,12 @@ app.use((error, _req, res, _next) => {
 })
 
 if (require.main === module) {
-  const server = app.listen(port, () => console.log(`IMFORCE API listening on ${port}`))
+  const server = app.listen(port, () => {
+    console.log(`IMFORCE API listening on ${port}`)
+    console.log(mailer.mode === 'smtp' ? `Employer emails: sent through ${process.env.SMTP_HOST} (links point to ${publicSiteUrl}). Test with: npm run email:test -- you@example.com`
+      : mailer.mode === 'log' ? 'Employer emails: NOT sent (SMTP_HOST=log prints them here). Staff get the private links to send themselves.'
+        : 'Employer emails: NOT sent (SMTP_HOST is empty). Staff get the private links to send themselves.')
+  })
   // Finish in-flight requests (for example a payment verification) before exiting on deploy/restart.
   const shutdown = (signal) => {
     console.log(`${signal} received: closing the API gracefully.`)
