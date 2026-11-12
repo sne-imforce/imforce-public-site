@@ -42,7 +42,7 @@
 .global-footer__logo strong {
   display: block;
   margin-top: 3px;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-family: var(--font-interface);
   font-size: 9px;
   font-weight: 500;
@@ -128,7 +128,7 @@
 .global-footer__social-item svg {
   width: 16px;
   height: 16px;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .global-footer__brand {

@@ -237,7 +237,8 @@ function Navbar() {
       <button
         type="button"
         className={`navbar__mobile-backdrop${isMobileMenuOpen ? ' is-open' : ''}`}
-        aria-label="Close navigation menu"
+        aria-hidden="true"
+        tabIndex={-1}
         onClick={() => setIsMobileMenuOpen(false)}
       />
       <header

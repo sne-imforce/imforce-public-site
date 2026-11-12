@@ -29,7 +29,7 @@
 }
 
 .careers-eyebrow--blue {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .careers-hero h1 {
@@ -58,9 +58,7 @@
 }
 
 .careers-hero__button,
-.careers-empty button,
-.careers-card button,
-.careers-dialog__apply {
+.careers-empty button {
   min-height: 46px;
   display: inline-flex;
   align-items: center;
@@ -329,7 +327,7 @@
 
 .careers-detail__eyebrow {
   margin: 0;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font: 700 11px/1.5 var(--font-interface);
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -354,8 +352,7 @@
 }
 
 .careers-detail__apply,
-.careers-empty button,
-.careers-detail__signin {
+.careers-empty button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -389,13 +386,6 @@
 .careers-detail__apply:hover,
 .careers-empty button:hover {
   background: #073c7e;
-}
-
-.careers-detail__signin {
-  margin-top: 16px;
-  color: var(--color-primary);
-  font: 600 15px/1.5 var(--font-interface);
-  text-decoration: none;
 }
 
 .careers-detail__section {
@@ -452,7 +442,6 @@
 .careers-job-card:focus-visible,
 .careers-empty button:focus-visible,
 .careers-detail__apply:focus-visible,
-.careers-detail__signin:focus-visible,
 .careers-page a:focus-visible {
   outline: 3px solid var(--color-accent);
   outline-offset: 3px;
@@ -511,11 +500,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .careers-card,
-  .careers-card button,
   .careers-empty button,
-  .careers-hero__button,
-  .careers-dialog__apply {
+  .careers-hero__button {
     transition: none;
   }
 }

@@ -29,7 +29,7 @@
 }
 
 .placement-eyebrow--blue {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .placement-hero h1 {
@@ -141,7 +141,7 @@
 }
 
 .placement-step__number {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font: 600 13px/1.5 var(--font-numbers);
 }
 
@@ -224,7 +224,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   content: '•';
   font-weight: 700;
 }

@@ -33,7 +33,7 @@
 }
 
 .about-eyebrow--blue {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .about-hero h1 {
@@ -205,7 +205,7 @@
 }
 
 .about-tenure strong {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font: 700 58px/1 var(--font-numbers);
 }
 
@@ -248,7 +248,7 @@
 }
 
 .about-step__number {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font: 500 14px/1.5 var(--font-numbers);
 }
 
@@ -321,7 +321,7 @@
 }
 
 .about-industry__link:hover {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .about-focus {
@@ -357,45 +357,6 @@
 
 .about-contact .about-eyebrow {
   margin-bottom: 10px;
-}
-
-.about-footer {
-  padding: 24px 0;
-  background: #001a40;
-  color: #d6e3f6;
-}
-
-.about-footer__inner {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.about-footer__brand {
-  display: flex;
-  flex-direction: column;
-  color: #fff;
-  font: 700 16px/1.2 var(--font-heading);
-  letter-spacing: 0.04em;
-  text-decoration: none;
-}
-
-.about-footer__brand span {
-  color: #a9d1f3;
-  font: 500 8px/1.5 var(--font-interface);
-  letter-spacing: 0.13em;
-}
-
-.about-footer__inner p,
-.about-footer__inner > a:last-child {
-  margin: 0;
-  color: #d6e3f6;
-  font: 400 12px/1.5 var(--font-body);
-}
-
-.about-footer__inner > a:last-child {
-  margin-left: auto;
-  text-decoration: none;
 }
 
 .about-page a:focus-visible {
@@ -531,22 +492,6 @@
     justify-content: center;
     padding-top: 50px;
     padding-bottom: 50px;
-  }
-
-  .about-footer__inner {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 13px 20px;
-  }
-
-  .about-footer__inner p {
-    width: calc(100% - 120px);
-    margin-left: auto;
-    text-align: right;
-  }
-
-  .about-footer__inner > a:last-child {
-    margin-left: 0;
   }
 }
 

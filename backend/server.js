@@ -671,4 +671,4 @@ app.use((error, _req, res, _next) => {
 
 if (require.main === module) app.listen(port, () => console.log(`IMFORCE API listening on ${port}`))
 
-module.exports = { app, security, isEmail, validateEmployerOrder, fromVacancy }
+module.exports = { app, security, isEmail }

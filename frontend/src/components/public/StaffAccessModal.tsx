@@ -19,6 +19,20 @@ const employmentTypes = ['Permanent', 'Contract', 'Fixed-term', 'Temporary']
 const idleTimeoutMs = 15 * 60 * 1000
 const hiddenInquiryFields = new Set(['authorizedContact', 'paymentAmountMinor', 'paymentCurrency', 'paystackTransactionId'])
 
+function humanizeField(key: string) {
+  const words = key.replace(/([A-Z])/g, ' $1').toLowerCase().trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+function paymentLabel(status: unknown): { text: string; tone: 'success' | 'warning' | 'danger' } {
+  if (status === 'paid') return { text: 'Paid', tone: 'success' }
+  if (status === 'initialization_failed') return { text: 'Checkout failed', tone: 'danger' }
+  return { text: 'Awaiting payment', tone: 'warning' }
+}
+
+// Only build a mailto: link from a plain, single address (no header injection).
+const isSafeEmail = (value: string) => /^[^\s@<>"?&,;:]+@[^\s@<>"?&,;:]+\.[^\s@<>"?&,;:]+$/.test(value) && value.length <= 254
+
 type StaffMember = {
   email: string
 }
@@ -365,29 +379,43 @@ export function StaffAccessPage() {
                 <ul className="staff-access-page__entries">
                   {inquiries.map((inquiry) => {
                     const details = inquiry.details ?? {}
-                    const title = inquiry.kind === 'contact'
+                    const isContact = inquiry.kind === 'contact'
+                    const title = isContact
                       ? inquiry.subject ?? 'Contact enquiry'
                       : `${String(details.jobTitle ?? 'Job order')} · ${String(details.legalName ?? '')}`
+                    const email = isContact ? inquiry.email ?? '' : String(details.email ?? '')
+                    const payment = isContact ? null : paymentLabel(details.paymentStatus)
                     return (
-                      <li key={`${inquiry.kind}-${inquiry.id}`}>
+                      <li key={`${inquiry.kind}-${inquiry.id}`} className="staff-enquiry">
                         <details>
                           <summary>
-                            <strong>{title}</strong>
-                            <span>{inquiry.kind === 'contact' ? inquiry.email : String(details.email ?? '')} · {new Date(inquiry.created_at).toLocaleDateString()}</span>
+                            <span className="staff-enquiry__heading">
+                              <strong>{title}</strong>
+                              <span className="staff-enquiry__badges">
+                                <span className="staff-enquiry__badge">{isContact ? 'Contact' : 'Job order'}</span>
+                                {payment && <span className={`staff-enquiry__badge staff-enquiry__badge--${payment.tone}`}>{payment.text}</span>}
+                              </span>
+                            </span>
+                            <span>{email} · {formatDateDmy(inquiry.created_at)}</span>
                           </summary>
-                          {inquiry.kind === 'contact' ? (
-                            <dl>
-                              {inquiry.name && <div><dt>name</dt><dd>{inquiry.name}</dd></div>}
-                              {inquiry.phone && <div><dt>phone</dt><dd>{inquiry.phone}</dd></div>}
-                              {inquiry.enquiry_type && <div><dt>enquiry type</dt><dd>{inquiry.enquiry_type}</dd></div>}
-                              <div><dt>message</dt><dd>{inquiry.message}</dd></div>
-                            </dl>
-                          ) : (
-                            <dl>
-                              {Object.entries(details).filter(([key]) => !hiddenInquiryFields.has(key)).map(([key, value]) => (
-                                <div key={key}><dt>{key.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</dt><dd>{String(value)}</dd></div>
-                              ))}
-                            </dl>
+                          <dl className="staff-enquiry__details">
+                            {isContact ? (
+                              <>
+                                {inquiry.name && <div><dt>Name</dt><dd>{inquiry.name}</dd></div>}
+                                {inquiry.phone && <div><dt>Phone</dt><dd>{inquiry.phone}</dd></div>}
+                                {inquiry.enquiry_type && <div><dt>Enquiry type</dt><dd>{inquiry.enquiry_type}</dd></div>}
+                                <div className="staff-enquiry__wide"><dt>Message</dt><dd>{inquiry.message}</dd></div>
+                              </>
+                            ) : (
+                              Object.entries(details).filter(([key]) => !hiddenInquiryFields.has(key)).map(([key, value]) => (
+                                <div key={key} className={String(value).length > 80 ? 'staff-enquiry__wide' : undefined}>
+                                  <dt>{humanizeField(key)}</dt><dd>{String(value)}</dd>
+                                </div>
+                              ))
+                            )}
+                          </dl>
+                          {isSafeEmail(email) && (
+                            <a className="staff-enquiry__reply" href={`mailto:${email}`}>Reply by email</a>
                           )}
                         </details>
                       </li>

@@ -183,6 +183,11 @@
   outline-offset: 3px;
 }
 
+/* The tap-to-close backdrop only exists on the mobile menu layout. */
+.navbar__mobile-backdrop {
+  display: none;
+}
+
 @media (max-width: 1120px) {
   .navbar__bar {
     width: calc(100% - 40px);
@@ -209,6 +214,7 @@
   }
 
   .navbar__mobile-backdrop {
+    display: block;
     position: fixed;
     inset: 0;
     z-index: 5;

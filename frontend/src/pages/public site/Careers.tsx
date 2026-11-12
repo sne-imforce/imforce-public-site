@@ -39,7 +39,7 @@ function SalaryMeta({ value }: { value: string }) {
   const salary = formatSalary(value)
   return (
     <span>
-      {!/\bZAR\b/i.test(salary) && <strong className="careers-currency-label">ZAR</strong>}
+      {/\d/.test(salary) && !/\bZAR\b/i.test(salary) && <strong className="careers-currency-label">ZAR</strong>}
       {salary}
     </span>
   )
@@ -363,7 +363,7 @@ function Careers() {
 
           {filteredVacancies.length > 0 ? (
             <div className="careers-layout">
-              <div className="careers-job-list" role="list">
+              <div className="careers-job-list" aria-label="Matching vacancies">
                 {filteredVacancies.map((vacancy) => {
                   const isSelected = selectedVacancy?.id === vacancy.id
 
@@ -373,6 +373,7 @@ function Careers() {
                       key={vacancy.id}
                       type="button"
                       className={`careers-job-card${isSelected ? ' careers-job-card--selected' : ''}`}
+                      aria-pressed={isSelected}
                       onClick={() => handleSelectVacancy(vacancy)}
                     >
                       {vacancy.isUrgent && <span className="careers-urgent-badge">Urgent</span>}

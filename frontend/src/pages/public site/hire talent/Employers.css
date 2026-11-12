@@ -29,7 +29,7 @@
 }
 
 .employers-eyebrow--blue {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .employers-hero h1 {
@@ -136,7 +136,7 @@
 }
 
 .employers-step__number {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font: 600 13px/1.5 var(--font-numbers);
 }
 
@@ -432,12 +432,6 @@
   gap: 18px;
 }
 
-.employers-form__status {
-  margin: 0;
-  color: #245c39;
-  font: 600 14px/1.6 var(--font-body);
-}
-
 .employers-review {
   width: min(840px, calc(100% - 32px));
   max-width: none;
@@ -559,12 +553,6 @@
 
 .employers-review__footer {
   margin-top: 22px;
-}
-
-.employers-review__checkout-note {
-  margin: 0 0 16px;
-  color: #8a3b16;
-  font: 600 14px/1.6 var(--font-body);
 }
 
 .employers-review__actions {

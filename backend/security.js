@@ -198,7 +198,7 @@ function createSecurityMonitor(options = {}) {
     next()
   }
 
-  return { record, guard, tripwire, isBlocked, _state: { scores, blocked } }
+  return { record, guard, tripwire, isBlocked }
 }
 
 async function defaultSendAlert(url, event) {
@@ -211,4 +211,4 @@ async function defaultSendAlert(url, event) {
   })
 }
 
-module.exports = { createSecurityMonitor, detectAttack, isPrivateAddress, HONEYPOT_PATTERNS, BLOCK_THRESHOLD }
+module.exports = { createSecurityMonitor, isPrivateAddress }

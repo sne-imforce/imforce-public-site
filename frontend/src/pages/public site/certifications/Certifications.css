@@ -29,7 +29,7 @@
 }
 
 .certifications-eyebrow--blue {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .certifications-hero h1 {
@@ -131,7 +131,7 @@
 }
 
 .certifications-empty a:hover {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .certifications-contact {

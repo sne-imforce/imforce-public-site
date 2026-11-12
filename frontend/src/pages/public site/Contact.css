@@ -29,7 +29,7 @@
 }
 
 .contact-eyebrow--blue {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .contact-hero h1 {
@@ -106,7 +106,7 @@
 
 .contact-details__emails a:hover,
 .contact-details__links a:hover {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .contact-form-panel {
