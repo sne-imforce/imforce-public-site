@@ -149,5 +149,4 @@ vite.config.ts.timestamp-*
 .astro/
 
 # Turbo Repo
-.turbo# Offline-mode settings: no secrets, only the local API address.
-!.env.offline
+.turbo

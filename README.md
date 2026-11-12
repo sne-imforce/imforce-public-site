@@ -16,17 +16,6 @@ React/TypeScript frontend with an Express API backed by Supabase. See [productio
 
 The Vite development server defaults to port 5173 and the API defaults to 3001. Production must use an HTTPS `FRONTEND_ORIGIN`, a secret manager for backend credentials, HTTPS end to end, and verified proxy settings.
 
-## Offline mode (when Supabase or the internet is unavailable)
-
-For local testing only. The real API runs with an in-memory stand-in for Supabase and Paystack, so no internet is needed:
-
-```bash
-cd backend && npm run offline
-cd frontend && npm run dev:offline
-```
-
-Open http://localhost:5173. Sign in at `/admin` as `staff` / `correct-horse`. Emails, including private update and payment links, are printed in the backend terminal. After **Checkout**, open the `/employers?reference=…` link printed there to simulate a successful payment. Data is kept in `backend/dev/.offline-data.json`; delete it to start again. Offline mode refuses to run with `NODE_ENV=production`.
-
 ## Available frontend commands
 
 - `npm run dev` starts Vite.
