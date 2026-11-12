@@ -11,12 +11,22 @@ const actionLabels: Record<string, string> = {
   'vacancy.create': 'Created job post',
   'vacancy.update': 'Updated job post',
   'vacancy.delete': 'Deleted job post',
+  'advert.approve': 'Approved advert',
+  'advert.request_changes': 'Requested advert changes',
+  'advert.reject': 'Rejected advert',
+  'advert.reopen': 'Moved advert back to review',
+  'device.trust': 'Remembered a device',
+  'device.forget': 'Forgot remembered device',
 }
 
 const actionTone: Record<string, string> = {
   'vacancy.create': 'success',
   'vacancy.update': 'info',
   'vacancy.delete': 'danger',
+  'advert.approve': 'success',
+  'advert.request_changes': 'warning',
+  'advert.reject': 'danger',
+  'advert.reopen': 'info',
 }
 
 const formatWhen = (value: string) => new Intl.DateTimeFormat('en-ZA', {
@@ -35,7 +45,13 @@ const detailText = (entry: StaffAuditEntry) => {
   if (typeof entry.detail?.count === 'number') return `${entry.detail.count} enquiries`
   if (entry.detail?.mfa === true) return 'With two-step sign-in'
   if (typeof entry.detail?.client === 'string') return `Client: ${entry.detail.client}`
-  return ''
+  const parts: string[] = []
+  if (typeof entry.detail?.company === 'string') parts.push(`Employer: ${entry.detail.company}`)
+  if (typeof entry.detail?.reason === 'string') parts.push(`Reason: ${entry.detail.reason}`)
+  if (typeof entry.detail?.device === 'string') parts.push(entry.detail.device)
+  if (entry.detail?.scope === 'all') parts.push('All devices')
+  if (entry.detail?.mfa === 'remembered-device') parts.push('From a remembered device')
+  return parts.join(' · ')
 }
 
 /** /admin/audit — who did what, and when. */

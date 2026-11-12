@@ -170,6 +170,16 @@ const bodyRows = (page) => page.locator('tbody tr:not(.data-table__details-row):
     await page.goto(`${BASE}/admin/review?order=${twin2.id}`); await page.getByRole('heading', { name: 'Advert review' }).waitFor(); await page.waitForTimeout(300)
     ok('links open the exact order even if short references collide', (await page.locator('.data-table__details-row').innerText()).includes('Twin Role B'))
   }
+  { // Badge colours are applied dynamically; make sure every tone is actually styled.
+    await page.goto(`${BASE}/admin/review`); await page.getByRole('heading', { name: 'Advert review' }).waitFor()
+    await page.locator('select').first().selectOption('')
+    const colour = async (text) => page.locator('.admin-badge', { hasText: text }).first().evaluate((el) => getComputedStyle(el).backgroundColor)
+    const plain = await page.locator('.admin-badge:not([class*="--"])').first().evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => 'rgb(238, 243, 250)')
+    const tones = { 'Paid': 'success', 'Approved · live': 'success', 'Awaiting payment': 'warning', 'Changes requested': 'warning', 'Awaiting review': 'info' }
+    const unstyled = []
+    for (const text of Object.keys(tones)) { const value = await colour(text); if (value === plain || value === 'rgba(0, 0, 0, 0)') unstyled.push(text) }
+    ok('every badge colour (green, amber, blue, red) is styled', unstyled.length === 0, unstyled.join(', '))
+  }
   ok('no JavaScript errors', errors.length === 0, errors.join(' | '))
 
   // Mobile layout

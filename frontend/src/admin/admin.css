@@ -228,7 +228,12 @@
   font: 700 12px/1.6 var(--font-interface);
   white-space: nowrap;
 }
+/* Tones are applied dynamically (admin-badge--${tone}); keep all of them. */
+.admin-badge--success { background: #e3f4ea; color: #1c6b3c; }
+.admin-badge--warning { background: #fff4dc; color: #7a4d00; }
 .admin-badge--danger { background: #fde8e8; color: #a12828; }
+.admin-badge--info { background: #e6f0fb; color: #1d5a96; }
+.admin-badge--muted { background: #eef0f3; color: #4a5361; }
 
 .admin-cell__title {
   display: block;
