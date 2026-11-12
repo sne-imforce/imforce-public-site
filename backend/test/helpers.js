@@ -123,16 +123,18 @@ globalThis.fetch = async (input, init = {}) => {
       return json(state.contacts)
     }
     if (url.pathname === '/rest/v1/employer_inquiries') {
-      if (method === 'POST') { const row = { id: crypto.randomUUID(), details: body.details }; state.employers.push(row); return json([row], 201) }
+      if (method === 'POST') { const row = { id: crypto.randomUUID(), details: body.details, review_status: 'pending', created_at: new Date().toISOString() }; state.employers.push(row); return json([row], 201) }
+      const byId = url.searchParams.get('id')?.slice(3)
+      const byStatus = url.searchParams.get('review_status')?.slice(3)
+      const selected = state.employers.filter((row) => (!byId || row.id === byId) && (!byStatus || row.review_status === byStatus))
       if (method === 'PATCH') {
-        const id = url.searchParams.get('id').slice(3)
-        const row = state.employers.find((item) => item.id === id)
-        if (row) row.details = body.details
-        return json(undefined, 204)
+        if (state.failNextOrderPatch) { state.failNextOrderPatch = false; return json({ message: 'boom' }, 500) }
+        selected.forEach((row) => Object.assign(row, body))
+        return json(selected)
       }
       const ref = url.searchParams.get('details->>paymentReference')
       if (ref) return json(state.employers.filter((row) => `eq.${row.details.paymentReference}` === ref))
-      return json(state.employers)
+      return json(selected)
     }
     if (url.pathname === '/rest/v1/vacancies') {
       if (method === 'DELETE') {
@@ -141,7 +143,10 @@ globalThis.fetch = async (input, init = {}) => {
         state.vacancies = state.vacancies.filter((row) => row.id !== id)
         return json(removed)
       }
-      if (method === 'POST') { const row = { id: crypto.randomUUID(), status: 'published', created_at: new Date().toISOString(), ...body }; state.vacancies.push(row); return json([row], 201) }
+      if (method === 'POST') {
+        if (state.failNextVacancyInsert) { state.failNextVacancyInsert = false; return json({ message: 'insert failed' }, 500) }
+        const row = { id: crypto.randomUUID(), status: 'published', created_at: new Date().toISOString(), ...body }; state.vacancies.push(row); return json([row], 201)
+      }
       const idFilter = url.searchParams.get('id')?.slice(3)
       if (method === 'PATCH') {
         const row = state.vacancies.find((item) => item.id === idFilter)

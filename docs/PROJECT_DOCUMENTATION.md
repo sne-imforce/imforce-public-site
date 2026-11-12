@@ -188,7 +188,7 @@ sequenceDiagram
 ├── backend/
 │   ├── server.js                   Express API (routes, validation, Paystack, staff auth)
 │   ├── security.js                 Intrusion detection: honeypots, scoring, blocking, alerts
-│   ├── migrations/                 Supabase SQL (run in order 001 → 007)
+│   ├── migrations/                 Supabase SQL (run in order 001 → 008)
 │   ├── test/                       node:test security regression suite (mocks all services)
 │   └── .env.example                Configuration template (no secrets)
 └── frontend/
@@ -305,6 +305,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `005_staff_audit_log.sql` | Append-only `staff_audit_log`: the API may only insert and read, and triggers block UPDATE, DELETE and TRUNCATE even for the table owner |
 | `006_staff_usernames.sql` | `staff_profiles.username` (unique, lowercase, 3–32 characters) and `display_name` (the agent's name shown in the workspace); existing staff are given usernames and names from their email automatically; `staff_audit_log.actor_name` |
 | `007_staff_trusted_devices.sql` | `staff_trusted_devices` for \"Remember this device for 30 days\": stores only the SHA-256 hash of the device token, has a 31-day maximum, can be revoked but not deleted, and RLS hides it; adds the `device.trust` and `device.forget` audit actions |
+| `008_advert_review.sql` | Advert review on `employer_inquiries`: `review_status` (pending, approved, changes_requested, rejected), reviewer, time, reason (required to reject or request changes) and the published `vacancy_id`; review actions added to the audit log |
 
 ### Tables
 
@@ -420,7 +421,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 
 ## 13. Local development
 
-Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–007 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
+Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–008 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
 
 ```bash
 cd backend && cp .env.example .env   # then fill in the values
@@ -481,7 +482,7 @@ The hosting choice is still open (the scope compares xneelo, Hostinger and other
 1. **Frontend**: static hosting of `frontend/dist` with SPA fallback (all paths → `index.html`), HTTPS, and the headers in `public/_headers`.
 2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`. Start it with `npm start`. It shuts down gracefully on SIGTERM and writes JSON access, security and error logs to stdout for the host to collect.
 3. **Routing**: either the same origin (`/api/*` reverse-proxied to the API) or a separate API origin set in `VITE_API_BASE_URL`.
-4. **Supabase**: run migrations 001 → 007, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
+4. **Supabase**: run migrations 001 → 008, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
 5. **Paystack**: webhook `https://<api-host>/api/payments/paystack/webhook`; test mode end to end before switching to live keys.
 6. **Alerts**: create a Slack or Teams incoming webhook in a monitored channel and set `SECURITY_ALERT_WEBHOOK_URL`.
 
@@ -520,7 +521,7 @@ order by occurred_at desc;
 
 ### 17.5 Add or remove staff
 
-To add: run `npm run staff:create` in `backend/` (see §13). The agent then signs in at `/admin` with their **username** and password and sets up their authenticator app. To rename an agent or change a username: `update public.staff_profiles set display_name = 'New Name', username = 'new.username' where user_id = '…'`. To reset a forgotten password: Supabase → **Authentication → Users → … → Send password recovery**. To remove: `update public.staff_profiles set active = false where user_id = '…'`. Access is refused on the next request; existing tokens expire within an hour (or immediately after logout).
+To add, either use the SQL template `backend/sql/add-staff-member.sql` (create the user under **Authentication → Users → Add user**, then run the template in the SQL Editor with their username, name and email), or run `npm run staff:create` in `backend/` (see §13). The agent then signs in at `/admin` with their **username** and password and sets up their authenticator app. To rename an agent or change a username: `update public.staff_profiles set display_name = 'New Name', username = 'new.username' where user_id = '…'`. To reset a forgotten password: Supabase → **Authentication → Users → … → Send password recovery**. To remove: `update public.staff_profiles set active = false where user_id = '…'`. Access is refused on the next request; existing tokens expire within an hour (or immediately after logout).
 
 ### 17.6 Backups
 

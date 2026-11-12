@@ -69,4 +69,7 @@ deny "trusted device cannot be remembered for more than 31 days" "insert into pu
 ok   "service_role can remember a device" "1" "set role service_role; insert into public.staff_trusted_devices(user_id, token_hash, expires_at) values ('a0000000-0000-4000-8000-000000000001', md5(random()::text) || md5(random()::text), now() + interval '30 days') returning 1;"
 deny "service_role cannot delete device history (revoke instead)" "set role service_role; delete from public.staff_trusted_devices;" "permission denied"
 ok   "audit log accepts device.trust / device.forget" "2" "set role service_role; insert into public.staff_audit_log(action) values ('device.trust'), ('device.forget'); select count(*) from (select 1 from public.staff_audit_log where action in ('device.trust','device.forget') order by id desc limit 2) x;"
+ok   "008 new job orders start in the review queue" "pending" "insert into public.employer_inquiries(details) values ('{\"jobTitle\":\"Review check\"}') returning review_status;"
+deny "008 rejecting without a reason is refused" "update public.employer_inquiries set review_status = 'rejected', reviewed_at = now(), reviewed_by_name = 'QA' where details->>'jobTitle' = 'Review check';" "check constraint"
+deny "008 approving without a reviewer is refused" "update public.employer_inquiries set review_status = 'approved' where details->>'jobTitle' = 'Review check';" "check constraint"
 echo; [ $fails -eq 0 ] && echo "All database checks passed." || { echo "$fails database check(s) failed."; exit 1; }

@@ -837,7 +837,9 @@ app.get('/api/staff/inquiries', requireStaff, async (req, res) => {
   try {
     const [contacts, employers] = await Promise.all([
       supabase('/rest/v1/contact_inquiries?select=id,name,email,phone,enquiry_type,subject,message,created_at&order=created_at.desc&limit=100'),
-      supabase('/rest/v1/employer_inquiries?select=id,details,created_at&order=created_at.desc&limit=100'),
+      // Review columns come from migration 008; fall back gracefully if it has not run yet.
+      supabase('/rest/v1/employer_inquiries?select=id,details,created_at,review_status,reviewed_by_name,reviewed_at,review_reason,vacancy_id&order=created_at.desc&limit=200')
+        .catch(() => supabase('/rest/v1/employer_inquiries?select=id,details,created_at&order=created_at.desc&limit=200')),
     ])
     const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer' }))]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -854,6 +856,75 @@ app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
     res.status(201).json({ vacancy: toVacancy(row) })
   } catch (error) { res.status(error.status === 400 ? 400 : 502).json({ error: error.status === 400 ? error.message : 'Vacancy could not be saved.' }) }
 })
+// Advert review: an IMFORCE team member approves a paid job order before it
+// goes online, or requests changes / rejects it with a reason.
+const reviewDecisions = {
+  approve: { status: 'approved', action: 'advert.approve' },
+  changes: { status: 'changes_requested', action: 'advert.request_changes' },
+  reject: { status: 'rejected', action: 'advert.reject' },
+  reopen: { status: 'pending', action: 'advert.reopen' },
+}
+
+app.post('/api/staff/job-orders/:id/review', requireStaff, async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) {
+    security.record(req, 'invalid-record-id', 'medium', 'Job order review called with a non-UUID id')
+    return res.status(404).json({ error: 'Job order not found.' })
+  }
+  const decision = reviewDecisions[req.body?.decision]
+  if (!decision) return res.status(400).json({ error: 'Choose approve, request changes, reject or reopen.' })
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : ''
+  if ((decision.status === 'changes_requested' || decision.status === 'rejected') && (reason.length < 5 || reason.length > 1000)) {
+    return res.status(400).json({ error: 'Explain the decision in 5 to 1,000 characters so the team and the employer know what to do next.' })
+  }
+  let vacancyRow = null
+  if (decision.status === 'approved') {
+    try { vacancyRow = fromVacancy(req.body?.vacancy) } catch (error) { return res.status(400).json({ error: error.message }) }
+  }
+  const id = encodeURIComponent(req.params.id)
+  let order
+  try {
+    ;[order] = await supabase(`/rest/v1/employer_inquiries?id=eq.${id}&select=id,details,review_status`)
+  } catch { return res.status(502).json({ error: 'The job order could not be loaded.' }) }
+  if (!order) return res.status(404).json({ error: 'Job order not found.' })
+  if (decision.status === 'approved' && order.details?.paymentStatus !== 'paid') {
+    return res.status(409).json({ error: 'This job order has not been paid yet. It can be approved once the activation fee is confirmed.' })
+  }
+  const allowedFrom = decision.status === 'pending' ? ['changes_requested', 'rejected'] : ['pending']
+  if (!allowedFrom.includes(order.review_status)) {
+    return res.status(409).json({ error: 'Someone has already reviewed this job order. Refresh to see the latest status.' })
+  }
+
+  const review = decision.status === 'pending'
+    ? { review_status: 'pending', reviewed_by: null, reviewed_by_name: null, reviewed_at: null, review_reason: null }
+    : { review_status: decision.status, reviewed_by: req.staffUser.id, reviewed_by_name: req.staffProfile.display_name, reviewed_at: new Date().toISOString(), review_reason: reason || null }
+  try {
+    // Conditional update: only succeeds if nobody else changed the status meanwhile.
+    const claimed = await supabase(`/rest/v1/employer_inquiries?id=eq.${id}&review_status=eq.${order.review_status}`, { method: 'PATCH', body: review, prefer: 'return=representation' })
+    if (!claimed?.length) return res.status(409).json({ error: 'Someone has already reviewed this job order. Refresh to see the latest status.' })
+  } catch { return res.status(502).json({ error: 'The review could not be saved. Please try again.' }) }
+
+  let vacancy = null
+  if (vacancyRow) {
+    try {
+      ;[vacancy] = await supabase('/rest/v1/vacancies', { method: 'POST', body: vacancyRow, prefer: 'return=representation' })
+      await supabase(`/rest/v1/employer_inquiries?id=eq.${id}`, { method: 'PATCH', body: { vacancy_id: vacancy.id }, prefer: 'return=minimal' })
+    } catch {
+      // Put the order back in the queue so it is not marked approved without an advert.
+      try {
+        if (vacancy?.id) await supabase(`/rest/v1/vacancies?id=eq.${encodeURIComponent(vacancy.id)}`, { method: 'DELETE', prefer: 'return=minimal' })
+        await supabase(`/rest/v1/employer_inquiries?id=eq.${id}`, { method: 'PATCH', body: { review_status: 'pending', reviewed_by: null, reviewed_by_name: null, reviewed_at: null, review_reason: null }, prefer: 'return=minimal' })
+      } catch { /* logged below */ }
+      console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), message: 'Advert approval failed while publishing; order returned to the queue', order: req.params.id }))
+      return res.status(502).json({ error: 'The advert could not be published. The job order is back in the review queue; please try again.' })
+    }
+  }
+  await audit(req, decision.action, {
+    entityType: 'job_order', entityId: req.params.id,
+    detail: { title: vacancy?.title ?? order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, ...(reason ? { reason: reason.slice(0, 300) } : {}) },
+  })
+  res.json({ reviewStatus: review.review_status, vacancy: vacancy ? toVacancy(vacancy) : null })
+})
+
 app.get('/api/staff/audit', requireStaff, async (_req, res) => {
   try {
     const entries = await supabase('/rest/v1/staff_audit_log?select=occurred_at,actor_email,actor_name,action,entity_type,entity_id,detail&order=occurred_at.desc&limit=500')
