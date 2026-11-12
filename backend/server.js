@@ -288,6 +288,8 @@ app.get('/api/vacancies', async (_req, res) => {
   } catch { res.status(502).json({ error: 'Current vacancies could not be loaded.' }) }
 })
 
+const enquiryReference = (id) => `ENQ-${String(id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
+
 app.post('/api/contact', async (req, res) => {
   if (!requireConfig(res)) return
   const { name, email, phone = '', enquiryType, subject, message, website = '', extraNotesHp = '' } = req.body || {}
@@ -300,8 +302,9 @@ app.post('/api/contact', async (req, res) => {
     return res.status(400).json({ error: 'Check the required fields and try again.' })
   }
   try {
-    await supabase('/rest/v1/contact_inquiries', { method: 'POST', body: { name: name.trim(), email: email.trim().toLowerCase(), phone: phone.trim(), enquiry_type: enquiryType, subject: subject.trim(), message: message.trim() }, prefer: 'return=minimal' })
-    res.status(201).json({ ok: true })
+    const [saved] = await supabase('/rest/v1/contact_inquiries?select=id', { method: 'POST', body: { name: name.trim(), email: email.trim().toLowerCase(), phone: phone.trim(), enquiry_type: enquiryType, subject: subject.trim(), message: message.trim() }, prefer: 'return=representation' })
+    // Short reference the visitor can quote; staff can search for it in the inventory.
+    res.status(201).json({ ok: true, reference: saved?.id ? enquiryReference(saved.id) : null })
   } catch { res.status(502).json({ error: 'We could not save your enquiry. Please try again.' }) }
 })
 

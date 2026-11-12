@@ -24,7 +24,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const getVacancies = () => request<{ vacancies: Vacancy[] }>('/vacancies')
 export const submitContact = (data: Record<string, string>) =>
-  request<{ ok: true }>('/contact', { method: 'POST', body: JSON.stringify(data) })
+  request<{ ok: true; reference?: string | null }>('/contact', { method: 'POST', body: JSON.stringify(data) })
 export const initializePaystackCheckout = (details: Record<string, unknown>) =>
   request<{ authorizationUrl: string; reference: string }>('/payments/paystack/initialize', {
     method: 'POST', body: JSON.stringify({ details }),

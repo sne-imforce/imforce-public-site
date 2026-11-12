@@ -107,7 +107,7 @@ globalThis.fetch = async (input, init = {}) => {
       return json([...state.audit].reverse())
     }
     if (url.pathname === '/rest/v1/contact_inquiries') {
-      if (method === 'POST') { state.contacts.push(body); return json(undefined, 201) }
+      if (method === 'POST') { const row = { id: crypto.randomUUID(), ...body }; state.contacts.push(body); return json([{ id: row.id }], 201) }
       return json(state.contacts)
     }
     if (url.pathname === '/rest/v1/employer_inquiries') {

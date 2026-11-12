@@ -21,6 +21,9 @@ function humanizeField(key: string) {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+// Same short reference the visitor sees after sending the contact form.
+const enquiryReference = (id: string) => `ENQ-${id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+
 type PaymentState = 'paid' | 'pending' | 'failed'
 function paymentState(status: unknown): PaymentState {
   if (status === 'paid') return 'paid'
@@ -67,6 +70,7 @@ function EnquiryDetails({ row }: { row: EnquiryRow }) {
       <dl className="staff-enquiry__details">
         {row.kind === 'contact' ? (
           <>
+            <div><dt>Reference</dt><dd>{enquiryReference(inquiry.id)}</dd></div>
             {inquiry.name && <div><dt>Name</dt><dd>{inquiry.name}</dd></div>}
             {inquiry.phone && <div><dt>Phone</dt><dd>{inquiry.phone}</dd></div>}
             {inquiry.enquiry_type && <div><dt>Enquiry type</dt><dd>{inquiry.enquiry_type}</dd></div>}
@@ -238,8 +242,8 @@ export default function InventoryPage() {
           rows={enquiryRows}
           columns={enquiryColumns}
           rowId={(row) => row.id}
-          searchText={(row) => [row.from, row.email, row.subject, row.source.message, row.source.phone].join(' ')}
-          searchPlaceholder="Search name, email, subject…"
+          searchText={(row) => [row.from, row.email, row.subject, row.source.message, row.source.phone, row.kind === 'contact' ? enquiryReference(row.source.id) : ''].join(' ')}
+          searchPlaceholder="Search name, email, subject, reference…"
           filters={enquiryFilters}
           initialSort={{ key: 'received', direction: 'desc' }}
           emptyMessage="No enquiries have been received yet."

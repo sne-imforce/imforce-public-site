@@ -23,7 +23,7 @@ async function stubApi(page, opts = {}) {
     const url = new URL(route.request().url()); const p = url.pathname; const m = route.request().method()
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (p === '/api/vacancies') return json({ vacancies: [{ id: 'a', title: 'Bad Link Role', location: 'Durban', region: 'KZN', category: 'Admin', employmentType: 'Permanent', isUrgent: false, closingDate: null, posted: '2026-11-01T00:00:00Z', applicationUrl: 'javascript:alert(1)', summary: 'Role', responsibilities: ['x'] }] })
-    if (p === '/api/contact' && m === 'POST') { opts.contactBody = route.request().postDataJSON(); return json({ ok: true }, 201) }
+    if (p === '/api/contact' && m === 'POST') { opts.contactBody = route.request().postDataJSON(); return opts.contactFails ? json({ error: 'We could not save your enquiry. Please try again.' }, 502) : json({ ok: true, reference: 'ENQ-1A2B3C4D' }, 201) }
     if (p === '/api/staff/login') { opts.loginCalls = (opts.loginCalls || 0) + 1; opts.loginBody = route.request().postDataJSON(); await new Promise(r => setTimeout(r, 400)); return json({ accessToken: 'a.b.c', email: 'staff@imforce.co.za', displayName: 'Thandi Mokoena', username: 'thandi.mokoena', expiresIn: 3600 }) }
     if (p === '/api/staff/vacancies') return opts.expire ? json({ error: 'Your session is invalid or expired. Sign in again.' }, 401) : json({ vacancies: [] })
     if (p === '/api/staff/inquiries') return json({ inquiries: [{ id: '1', kind: 'contact', created_at: '2026-11-10T10:00:00Z', name: 'Lerato', email: 'l@x.co', phone: '082', enquiry_type: 'Job opportunities', subject: 'Hi', message: '<img src=x onerror=alert(1)>' }] })
@@ -71,7 +71,19 @@ async function stubApi(page, opts = {}) {
     await page.selectOption('select[name="enquiryType"]', 'Job opportunities')
     await page.fill('input[name="subject"]', 'Looking for work'); await page.fill('textarea[name="message"]', 'Hello there')
     await page.click('button[type="submit"]'); await page.waitForTimeout(500)
-    ok('contact form submits and shows confirmation', await page.getByText('Your message has been sent').isVisible())
+    ok('contact confirmation greets the visitor by first name', await page.getByRole('heading', { name: 'Thank you, Lerato. Your message has been sent.' }).isVisible())
+    ok('confirmation receives focus (announced to screen readers)', await page.evaluate(() => document.activeElement?.id) === 'contact-form-title')
+    ok('confirmation shows reply email and reference', await page.getByText('lerato@example.com').isVisible() && await page.getByText('ENQ-1A2B3C4D').isVisible())
+    ok('next steps match a job seeker', await page.getByRole('link', { name: 'Browse current vacancies' }).isVisible() && await page.getByText('What happens next').isVisible())
+    ok('form is replaced by the confirmation (no duplicate sends)', await page.locator('form.contact-form').count() === 0)
+    await page.getByRole('button', { name: 'Send another message' }).click()
+    ok('"Send another message" brings back an empty form', await page.locator('form.contact-form').count() === 1 && await page.inputValue('input[name="name"]') === '')
+    state.contactFails = true
+    await page.fill('input[name="name"]', 'Lerato'); await page.fill('input[name="email"]', 'lerato@example.com')
+    await page.selectOption('select[name="enquiryType"]', 'Hiring and permanent staffing')
+    await page.fill('input[name="subject"]', 'Hiring'); await page.fill('textarea[name="message"]', 'Hello')
+    await page.click('button[type="submit"]'); await page.getByRole('alert').waitFor()
+    ok('a failed send shows a red alert with a phone fallback, and keeps the typed message', (await page.getByRole('alert').innerText()).includes('033 492 0600') && await page.inputValue('textarea[name="message"]') === 'Hello')
     ok('contact payload carries empty bot-trap field and no legacy _subject', state.contactBody?.extraNotesHp === '' && !('_subject' in state.contactBody), JSON.stringify(Object.keys(state.contactBody || {})))
     ok('bot-trap field is invisible to people', trapOk)
     await page.close()

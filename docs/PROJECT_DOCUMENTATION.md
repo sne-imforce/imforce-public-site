@@ -225,7 +225,7 @@ sequenceDiagram
 | `/services/placements` | Permanent staffing | |
 | `/certifications` (`/credentials` redirects) | Certifications & credentials | |
 | `/fee-calculator` | Fee calculator | Can prefill the employer form |
-| `/contact` | Contact | `?subject=` prefill; hidden bot-trap field |
+| `/contact` | Contact | `?subject=` prefill; hidden bot-trap field. After sending, the form is replaced by a confirmation with the visitor's name, reply email, an `ENQ-XXXXXXXX` reference (staff can search for it in the inventory), "what happens next", next-step links matched to the enquiry type, and the phone number. Failures show a red alert with a phone fallback and keep the typed message. |
 | `/privacy` | Privacy notice (POPIA) | Linked from the footer and both forms |
 | `/admin` | Staff sign-in (password + authenticator code), then **Inventory**: summary tiles, Job posts table, Enquiries table | `noindex` (all `/admin/*`); idle sign-out after 15 minutes |
 | `/admin/jobs` | **Job posts** subscreen: new post, or edit with `?edit=<id>`; live preview | Staff only |
@@ -265,7 +265,7 @@ Base path `/api`. All bodies are JSON (`Content-Type: application/json` is requi
 |---|---|---|---|
 | `GET /api/health` | Liveness probe | 120 | 200 `{status:"ok"}` |
 | `GET /api/vacancies` | Published, unexpired vacancies. **Client names are never included.** | 120 | 200 `{vacancies:[…]}`, 502 |
-| `POST /api/contact` | Contact enquiry. Body: `name`(≤120), `email`(≤254), `phone`(≤40, optional), `enquiryType` (one of *Hiring and permanent staffing*, *Job opportunities*, *Other enquiry*), `subject`(≤160), `message`(≤5000) | 6 | 201, 400, 502 |
+| `POST /api/contact` | Contact enquiry; returns `{ok, reference}` (short `ENQ-…` reference for the visitor). Body: `name`(≤120), `email`(≤254), `phone`(≤40, optional), `enquiryType` (one of *Hiring and permanent staffing*, *Job opportunities*, *Other enquiry*), `subject`(≤160), `message`(≤5000) | 6 | 201, 400, 502 |
 | `POST /api/payments/paystack/initialize` | Body `{details:{…job order…}}`. Only whitelisted fields are accepted. | 6 | 201 `{authorizationUrl, reference}`, 400 `{error, errors:[{field,message}]}`, 502, 503 |
 | `POST /api/payments/paystack/verify` | Body `{reference:"IMF-<uuid>"}` | 6 | 200 paid, 400, 402 not paid, 404, 502 |
 | `POST /api/payments/paystack/webhook` | Paystack only; HMAC-SHA512 signature required | 120 | 200, 401, 503 |

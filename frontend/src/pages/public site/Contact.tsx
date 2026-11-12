@@ -1,13 +1,41 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { FiAlertCircle, FiArrowRight, FiCheck, FiPhone } from 'react-icons/fi'
 import { Link, useSearchParams } from 'react-router-dom'
 import { submitContact } from '../../data/api'
 import Navbar from '../../components/public/Navbar'
 import './Contact.css'
 
+type SentEnquiry = { firstName: string; email: string; enquiryType: string; reference: string | null }
+
+// Useful next steps, matched to what the visitor asked about.
+const nextSteps: Record<string, Array<{ to: string; label: string }>> = {
+  'Job opportunities': [
+    { to: '/careers', label: 'Browse current vacancies' },
+    { to: '/about', label: 'Learn about IMFORCE' },
+  ],
+  'Hiring and permanent staffing': [
+    { to: '/employers#job-order', label: 'Start a job order' },
+    { to: '/fee-calculator', label: 'Estimate placement fees' },
+  ],
+  'Other enquiry': [
+    { to: '/services/placements', label: 'Explore our services' },
+    { to: '/careers', label: 'Browse current vacancies' },
+  ],
+}
+
 function Contact() {
   const [searchParams] = useSearchParams()
   const [sending, setSending] = useState(false)
-  const [formStatus, setFormStatus] = useState('')
+  const [formError, setFormError] = useState('')
+  const [sent, setSent] = useState<SentEnquiry | null>(null)
+  const sentHeadingRef = useRef<HTMLHeadingElement>(null)
+
+  // Move focus to the confirmation so keyboard and screen-reader users hear it.
+  useEffect(() => {
+    if (!sent) return
+    sentHeadingRef.current?.focus()
+    sentHeadingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [sent])
   useEffect(() => {
     const previousTitle = document.title
     const description = document.querySelector<HTMLMetaElement>(
@@ -81,6 +109,46 @@ function Contact() {
           </aside>
 
           <section className="contact-form-panel" aria-labelledby="contact-form-title">
+            {sent ? (
+              <div className="contact-sent" role="status">
+                <span className="contact-sent__icon" aria-hidden="true"><FiCheck /></span>
+                <h2 id="contact-form-title" ref={sentHeadingRef} tabIndex={-1}>
+                  Thank you{sent.firstName ? `, ${sent.firstName}` : ''}. Your message has been sent.
+                </h2>
+                <p className="contact-sent__lead">
+                  We’ve received your enquiry. A member of the IMFORCE team will reply to{' '}
+                  <strong>{sent.email}</strong>.
+                </p>
+                {sent.reference && (
+                  <p className="contact-sent__reference">
+                    Your reference <strong>{sent.reference}</strong>
+                    <span>Quote it if you call us about this enquiry.</span>
+                  </p>
+                )}
+                <div className="contact-sent__next">
+                  <h3>What happens next</h3>
+                  <ol>
+                    <li>Our team reads your message and passes it to the right consultant.</li>
+                    <li>They reply by email, or call you if you left a phone number.</li>
+                    <li>Can’t see our reply? Check your spam or junk folder.</li>
+                  </ol>
+                </div>
+                <div className="contact-sent__actions">
+                  {(nextSteps[sent.enquiryType] ?? nextSteps['Other enquiry']).map((step, index) => (
+                    <Link key={step.to} className={index === 0 ? 'contact-button' : 'contact-sent__secondary'} to={step.to}>
+                      {step.label} <FiArrowRight aria-hidden="true" />
+                    </Link>
+                  ))}
+                </div>
+                <p className="contact-sent__urgent">
+                  <FiPhone aria-hidden="true" /> <span>Need to talk sooner? Call <a href="tel:0334920600">033 492 0600</a>.</span>
+                </p>
+                <button type="button" className="contact-sent__again" onClick={() => setSent(null)}>
+                  Send another message
+                </button>
+              </div>
+            ) : (
+            <>
             <div className="contact-form-panel__heading">
               <p className="contact-eyebrow contact-eyebrow--blue">
                 Send an enquiry
@@ -94,14 +162,19 @@ function Contact() {
               onSubmit={async (event: FormEvent<HTMLFormElement>) => {
                 event.preventDefault()
                 const form = event.currentTarget
-                setSending(true); setFormStatus('')
-                const data = Object.fromEntries(new FormData(form).entries())
+                setSending(true); setFormError('')
+                const data = Object.fromEntries(Object.entries(Object.fromEntries(new FormData(form).entries())).map(([key, value]) => [key, String(value)]))
                 try {
-                  await submitContact(Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)])))
+                  const result = await submitContact(data)
                   form.reset()
-                  setFormStatus('Your message has been sent. Our team will be in touch.')
+                  setSent({
+                    firstName: data.name.trim().split(/\s+/)[0] ?? '',
+                    email: data.email.trim(),
+                    enquiryType: data.enquiryType,
+                    reference: result.reference ?? null,
+                  })
                 } catch (error) {
-                  setFormStatus(error instanceof Error ? error.message : 'Your message could not be sent. Please try again.')
+                  setFormError(error instanceof Error ? error.message : 'Your message could not be sent. Please try again.')
                 } finally { setSending(false) }
               }}
             >
@@ -185,11 +258,18 @@ function Contact() {
                 in our <Link to="/privacy">privacy notice</Link>.
               </p>
 
-              {formStatus && <p role="status">{formStatus}</p>}
+              {formError && (
+                <p className="contact-form__error" role="alert">
+                  <FiAlertCircle aria-hidden="true" />
+                  <span>{formError} If it keeps happening, call us on <a href="tel:0334920600">033 492 0600</a>.</span>
+                </p>
+              )}
               <button className="contact-button" type="submit" disabled={sending}>
                 {sending ? 'Sending…' : 'Send message'}
               </button>
             </form>
+            </>
+            )}
           </section>
         </section>
       </main>

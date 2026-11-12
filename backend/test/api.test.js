@@ -54,6 +54,7 @@ test('email validation is linear time (ReDoS regression)', async () => {
 test('contact form saves trimmed, normalized enquiries', async () => {
   const res = await call('/api/contact', { method: 'POST', body: { name: ' Lerato ', email: 'Lerato@Example.COM', enquiryType: 'Job opportunities', subject: 'Hello', message: 'I am looking for work.' } })
   assert.equal(res.status, 201)
+  assert.match(res.data.reference, /^ENQ-[0-9A-F]{8}$/, 'visitor gets a short reference to quote')
   const saved = state.contacts.at(-1)
   assert.equal(saved.name, 'Lerato')
   assert.equal(saved.email, 'lerato@example.com')
