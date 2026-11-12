@@ -175,7 +175,7 @@ async function supabase(path, { key = serviceKey, token, method = 'GET', body, p
   const text = await response.text()
   let data = null
   try { data = text ? JSON.parse(text) : null } catch { data = null }
-  if (!response.ok) throw Object.assign(new Error(data?.message || 'Supabase request failed.'), { status: response.status })
+  if (!response.ok) throw Object.assign(new Error(data?.message || 'Supabase request failed.'), { status: response.status, code: data?.code ?? null })
   return data
 }
 
@@ -1040,6 +1040,16 @@ function changeRequestEmail(order, reason, link, expiresAt) {
 
 // Creates a new link (revoking any earlier one), emails it, and reports the result.
 // The link itself is only returned to staff when the email was NOT sent, so they can send it.
+// Logs why a private link could not be created (no tokens or personal data), and
+// gives staff a message they can act on when a migration is missing.
+function linkFailure(error, what, migration) {
+  console.error(JSON.stringify({ level: 'error', at: new Date().toISOString(), message: `${what} could not be created`, status: error?.status ?? null, code: error?.code ?? null, detail: String(error?.message ?? error).slice(0, 300) }))
+  const missingTable = error?.code === 'PGRST205' || error?.code === '42P01' || /schema cache|does not exist/i.test(String(error?.message))
+  return missingTable
+    ? `${what} could not be created because the database table is missing. Ask your administrator to run migration ${migration} in Supabase (SQL editor), then try again.`
+    : null
+}
+
 async function issueChangeLink(req, order, reason) {
   await revokeChangeLinks(order.id)
   const token = crypto.randomBytes(32).toString('base64url')
@@ -1129,7 +1139,7 @@ app.post('/api/staff/job-orders/:id/review', requireStaff, async (req, res) => {
   let employerEmailStatus = null
   if (decision.status === 'changes_requested') {
     try { changeLink = await issueChangeLink(req, { ...order, id: req.params.id }, reason) }
-    catch { changeLink = { emailStatus: 'failed', error: 'The update link could not be created. Use "Send a new link" to try again.' } }
+    catch (error) { changeLink = { emailStatus: 'failed', error: linkFailure(error, 'The update link', '009') ?? 'The update link could not be created. Use "Send a new link" to try again.' } }
   } else {
     await revokeChangeLinks(req.params.id)
   }
@@ -1165,7 +1175,7 @@ app.post('/api/staff/job-orders/:id/change-link', requireStaff, async (req, res)
     const changeLink = await issueChangeLink(req, order, order.review_reason)
     await audit(req, 'advert.change_link_resent', { entityType: 'job_order', entityId: req.params.id, detail: { title: order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, email: changeLink.emailStatus } })
     res.json({ changeLink })
-  } catch { res.status(502).json({ error: 'A new link could not be created. Please try again.' }) }
+  } catch (error) { res.status(502).json({ error: linkFailure(error, 'A new link', '009') ?? 'A new link could not be created. Please try again.' }) }
 })
 
 // Staff: email the employer a private link to pay for an unpaid job order.
@@ -1196,7 +1206,7 @@ app.post('/api/staff/job-orders/:id/payment-link', requireStaff, async (req, res
     }).catch(() => {})
     await audit(req, 'payment.link_sent', { entityType: 'job_order', entityId: order.id, detail: { title, company: order.details?.legalName ?? null, email: status } })
     res.json({ paymentLink: { emailStatus: status, sentTo: order.details?.email ?? null, expiresAt: link.expires_at, link: status === 'sent' ? null : url } })
-  } catch { res.status(502).json({ error: 'The payment link could not be created. Please try again.' }) }
+  } catch (error) { res.status(502).json({ error: linkFailure(error, 'The payment link', '010') ?? 'The payment link could not be created. Please try again.' }) }
 })
 
 // Employer: open or submit an update using the private link.

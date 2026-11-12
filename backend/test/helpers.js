@@ -117,6 +117,7 @@ globalThis.fetch = async (input, init = {}) => {
         && (value('responded_at') !== 'is.null' || !row.responded_at)
         && (value('revoked_at') !== 'is.null' || !row.revoked_at)
         && (!value('expires_at') || row.expires_at > value('expires_at').slice(3))
+      if (state.changeTableMissing) return json({ code: 'PGRST205', message: "Could not find the table 'public.job_order_change_requests' in the schema cache" }, 404)
       if (method === 'POST') { const row = { id: crypto.randomUUID(), email_status: 'not_sent', responded_at: null, revoked_at: null, ...body }; state.changeRequests.push(row); return json([row], 201) }
       const rows = state.changeRequests.filter(matches)
       if (method === 'PATCH') { rows.forEach((row) => Object.assign(row, body)); return json(rows) }

@@ -155,3 +155,23 @@ test('staff see the latest link status on each job order (never the token)', asy
   assert.ok(row.change_request.expires_at)
   assert.equal(JSON.stringify(row).includes('token'), false)
 })
+
+test('if the update-link table is missing, staff are told which migration to run (and the reason is logged)', async () => {
+  const order = addPaidOrder()
+  state.changeTableMissing = true
+  const logged = []
+  const original = console.error
+  console.error = (line) => logged.push(String(line))
+  try {
+    const res = await requestChanges(order)
+    assert.equal(res.status, 200, 'the decision itself is saved')
+    assert.match(res.data.changeLink.error, /run migration 009 in Supabase/)
+    const resend = await call(`/api/staff/job-orders/${order.id}/change-link`, { method: 'POST', headers: auth, body: {} })
+    assert.equal(resend.status, 502)
+    assert.match(resend.data.error, /migration 009/)
+    assert.ok(logged.some((line) => line.includes('PGRST205')), 'the real reason is in the API log')
+  } finally {
+    console.error = original
+    state.changeTableMissing = false
+  }
+})
