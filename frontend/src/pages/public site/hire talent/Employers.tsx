@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FiCheckCircle } from 'react-icons/fi'
 import { Link, useSearchParams } from 'react-router-dom'
 import DatePicker from '../../../components/ui/DatePicker'
-import { initializePaystackCheckout, verifyPaystackPayment } from '../../../data/api'
+import { initializePaystackCheckout, resumePaystackCheckout, verifyPaystackPayment, type ApiError } from '../../../data/api'
 import { formatDateDmy } from '../../../utils/dates'
 import Navbar from '../../../components/public/Navbar'
 import './Employers.css'
@@ -67,6 +67,13 @@ type JobOrderReview = {
 type StoredDraft = Record<string, string | boolean>
 
 const draftStorageKey = 'imforce-employer-job-order-draft'
+// Private token that lets this tab pay for the job order it already created,
+// instead of creating a duplicate order when checkout is retried.
+const checkoutTokenKey = 'imforce-employer-checkout-token'
+const readCheckoutToken = () => { try { return sessionStorage.getItem(checkoutTokenKey) ?? '' } catch { return '' } }
+const saveCheckoutToken = (token: string | null | undefined) => {
+  try { if (token) sessionStorage.setItem(checkoutTokenKey, token); else sessionStorage.removeItem(checkoutTokenKey) } catch { /* best effort */ }
+}
 
 const salaryPrefillFormatter = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -189,9 +196,9 @@ function Employers() {
   const [submissionStatus, setSubmissionStatus] = useState('')
   const [checkoutFallbackUrl, setCheckoutFallbackUrl] = useState('')
   const [paymentNotice, setPaymentNotice] = useState('')
-  const [paymentToastMessage, setPaymentToastMessage] = useState('')
-  const [paymentToastMounted, setPaymentToastMounted] = useState(false)
-  const [paymentToastVisible, setPaymentToastVisible] = useState(false)
+  // Shown after Paystack returns and the payment is confirmed; stays until dismissed.
+  const [paymentConfirmed, setPaymentConfirmed] = useState<{ reference: string } | null>(null)
+  const confirmationRef = useRef<HTMLElement>(null)
   const paymentReference = searchParams.get('reference') ?? searchParams.get('trxref')
   const [initialDraft] = useState(readStoredDraft)
   const [closingDate, setClosingDate] = useState(
@@ -210,24 +217,19 @@ function Employers() {
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
-    if (!paymentToastMounted) return
-    if (paymentToastVisible) {
-      const hideTimer = window.setTimeout(() => setPaymentToastVisible(false), 3000)
-      return () => window.clearTimeout(hideTimer)
-    }
-    const removeTimer = window.setTimeout(() => setPaymentToastMounted(false), 350)
-    return () => window.clearTimeout(removeTimer)
-  }, [paymentToastMounted, paymentToastVisible])
+    if (!paymentConfirmed) return
+    confirmationRef.current?.scrollIntoView({ block: 'start' })
+    confirmationRef.current?.focus({ preventScroll: true })
+  }, [paymentConfirmed])
 
   useEffect(() => {
     if (!paymentReference) return
     let active = true
     void verifyPaystackPayment(paymentReference)
-      .then(({ message }) => {
+      .then(({ reference }) => {
         if (!active) return
-        setPaymentToastMessage(`${message} Paystack will email a copy of your proof of payment to your contact email.`)
-        setPaymentToastMounted(true)
-        window.requestAnimationFrame(() => setPaymentToastVisible(true))
+        setPaymentConfirmed({ reference })
+        saveCheckoutToken(null)
         try { sessionStorage.removeItem(draftStorageKey) } catch { /* Payment is confirmed; draft cleanup is best effort. */ }
         formRef.current?.reset()
         setClosingDate('')
@@ -370,13 +372,30 @@ function Employers() {
   return (
     <>
       <Navbar />
-      {paymentToastMounted && (
-        <div className={`employers-payment-toast${paymentToastVisible ? ' is-visible' : ''}`} role="status" aria-live="polite" aria-atomic="true">
-          <FiCheckCircle aria-hidden="true" />
-          <span>{paymentToastMessage}</span>
-        </div>
-      )}
       <main className="employers-page">
+        {paymentConfirmed && (
+          <section ref={confirmationRef} tabIndex={-1} className="employers-confirmation" role="status" aria-labelledby="employers-confirmation-title">
+            <div className="employers-shell employers-confirmation__inner">
+              <FiCheckCircle className="employers-confirmation__icon" aria-hidden="true" />
+              <div>
+                <h2 id="employers-confirmation-title">Payment received. Thank you!</h2>
+                <p className="employers-confirmation__reference">
+                  Your job order reference is <strong>{paymentConfirmed.reference}</strong>. Keep it for any questions.
+                </p>
+                <h3>What happens next</h3>
+                <ol>
+                  <li><strong>Within 1 business day</strong>, an IMFORCE team member reviews your advert.</li>
+                  <li>We email you as soon as it is live on our careers page. If anything needs to change, we email you a private link to update it. You do not pay again.</li>
+                  <li>Paystack emails your proof of payment to your contact email address.</li>
+                </ol>
+                <p>Questions? Call <a href="tel:+27334920600">033 492 0600</a> or reply to our confirmation email.</p>
+                <button type="button" className="employers-button employers-button--secondary" onClick={() => setPaymentConfirmed(null)}>
+                  Submit another job order
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
         <section className="employers-hero" aria-labelledby="employers-title">
           <div className="employers-shell employers-hero__inner">
             <p className="employers-eyebrow">For employers</p>
@@ -885,7 +904,28 @@ function Employers() {
                   const values = Object.fromEntries(new FormData(form).entries())
                   const details = Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'salaryType').map(([key, value]) => [key, key === 'authorizedContact' ? value === 'on' : String(value)]))
                   try {
-                    const { authorizationUrl } = await initializePaystackCheckout(details)
+                    // Retrying from this tab pays for the same job order (with any corrections)
+                    // instead of creating a duplicate. A new order is only created the first time.
+                    const startCheckout = async () => {
+                      const token = readCheckoutToken()
+                      if (token) {
+                        try { return await resumePaystackCheckout(token, details) } catch (cause) {
+                          const status = (cause as ApiError).status
+                          if (status === 409) { saveCheckoutToken(null); throw cause }
+                          if (status !== 404) throw cause
+                          saveCheckoutToken(null) // Expired: start a new job order.
+                        }
+                      }
+                      try {
+                        const started = await initializePaystackCheckout(details)
+                        saveCheckoutToken(started.resumeToken)
+                        return started
+                      } catch (cause) {
+                        saveCheckoutToken((cause as ApiError).payload?.resumeToken)
+                        throw cause
+                      }
+                    }
+                    const { authorizationUrl } = await startCheckout()
                     const checkoutUrl = new URL(authorizationUrl)
                     if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.paystack.com') {
                       throw new Error('Paystack returned an invalid checkout address. Please contact IMFORCE.')

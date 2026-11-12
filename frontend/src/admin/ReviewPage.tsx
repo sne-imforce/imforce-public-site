@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { FiCheckCircle, FiCopy, FiEdit3, FiMail, FiRefreshCw, FiRotateCcw, FiXCircle } from 'react-icons/fi'
+import { FiCheckCircle, FiCopy, FiCreditCard, FiEdit3, FiMail, FiRefreshCw, FiRotateCcw } from 'react-icons/fi'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { resendChangeLink, reviewJobOrder, type ChangeLinkResult, type ReviewDecision, type StaffInquiry } from '../data/api'
+import { resendChangeLink, reviewJobOrder, sendPaymentLink, type ChangeLinkResult, type ReviewDecision, type StaffInquiry } from '../data/api'
 import { formatDateDmy } from '../utils/dates'
 import ConfirmDialog from './ConfirmDialog'
 import DataTable, { type Column, type Filter } from './DataTable'
@@ -29,7 +29,6 @@ const toRow = (order: StaffInquiry): Row => {
 type PendingDecision = { row: Row; decision: Exclude<ReviewDecision, 'approve'> }
 const decisionCopy: Record<PendingDecision['decision'], { title: string; confirm: string; busy: string; needsReason: boolean; tone: 'danger' | 'neutral' }> = {
   changes: { title: 'Request changes to this advert?', confirm: 'Request changes', busy: 'Saving…', needsReason: true, tone: 'neutral' },
-  reject: { title: 'Reject this advert?', confirm: 'Reject advert', busy: 'Rejecting…', needsReason: true, tone: 'danger' },
   reopen: { title: 'Move this job order back to review?', confirm: 'Move back to review', busy: 'Saving…', needsReason: false, tone: 'neutral' },
 }
 
@@ -49,13 +48,13 @@ export default function ReviewPage() {
   const [error, setError] = useState('')
   // Shown when the update link could not be emailed, so staff can send it themselves.
   const [now] = useState(() => Date.now())
-  const [manualLink, setManualLink] = useState<(ChangeLinkResult & { role: string }) | null>(null)
+  const [manualLink, setManualLink] = useState<(ChangeLinkResult & { role: string; kind: 'update' | 'payment' }) | null>(null)
   const [copied, setCopied] = useState(false)
   const [resending, setResending] = useState<string | null>(null)
 
   const announceLink = (result: ChangeLinkResult | null, role: string) => {
     if (result?.emailStatus === 'sent') notify(`Changes requested for “${role}”. The employer was emailed a private link at ${result.sentTo}.`)
-    else if (result?.link) { setCopied(false); setManualLink({ ...result, role }) }
+    else if (result?.link) { setCopied(false); setManualLink({ ...result, role, kind: 'update' }) }
     else notify(result?.error ?? `Changes requested for “${role}”, but the update link could not be created. Use “Send a new link”.`)
   }
   const resend = async (row: Row) => {
@@ -72,6 +71,20 @@ export default function ReviewPage() {
     }
   }
 
+  const emailPaymentLink = async (row: Row) => {
+    setResending(row.id)
+    try {
+      const { paymentLink } = await sendPaymentLink(row.id)
+      await reloadInquiries()
+      if (paymentLink.emailStatus === 'sent') notify(`A payment link was emailed to ${paymentLink.sentTo}. Any earlier payment link you sent no longer works.`)
+      else if (paymentLink.link) { setCopied(false); setManualLink({ ...paymentLink, role: row.role, kind: 'payment' }) }
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : 'The payment link could not be sent.')
+    } finally {
+      setResending(null)
+    }
+  }
+
   const ask = (row: Row, decision: PendingDecision['decision']) => { setPending({ row, decision }); setReason(''); setError('') }
   const confirm = async () => {
     if (!pending || busy) return
@@ -80,7 +93,7 @@ export default function ReviewPage() {
       const result = await reviewJobOrder(pending.row.id, { decision: pending.decision, reason: reason.trim() || undefined })
       await reloadInquiries()
       if (pending.decision === 'changes') announceLink(result.changeLink, pending.row.role)
-      else notify({ reject: `“${pending.row.role}” was rejected.`, reopen: `“${pending.row.role}” is back in the review queue.` }[pending.decision])
+      else notify(`“${pending.row.role}” is back in the review queue.`)
       setPending(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The decision could not be saved. Please try again.')
@@ -122,6 +135,7 @@ export default function ReviewPage() {
               <div className="review-panel__resubmitted">
                 <strong>The employer updated this job order on {formatDateDmy(String(row.order.details.resubmittedAt))}</strong> after being asked:
                 {row.order.details?.lastChangeRequest && <blockquote className="review-panel__reason">{String(row.order.details.lastChangeRequest)}</blockquote>}
+                <ChangedFields value={row.order.details?.lastChangedFields} />
               </div>
             )}
             <p>Check the details above, then approve the advert to publish it on the careers page, or ask the employer for changes.</p>
@@ -130,15 +144,17 @@ export default function ReviewPage() {
                 <FiCheckCircle aria-hidden="true" /> Approve &amp; publish…
               </button>
               <button type="button" className="admin__button" onClick={() => ask(row, 'changes')}><FiEdit3 aria-hidden="true" /> Request changes</button>
-              <button type="button" className="admin__button admin__button--danger" onClick={() => ask(row, 'reject')}><FiXCircle aria-hidden="true" /> Reject</button>
             </div>
           </>
         )}
         {row.state === 'awaiting-payment' && (
           <>
-            <p>The R499 activation fee has not been paid yet, so this advert cannot be approved. You can still reject it, for example if it is a duplicate.</p>
+            <p>The R499 activation fee has not been paid yet, so this advert cannot be approved. Email the employer a private link to pay for this job order. It does not create a new order.</p>
+            <PaymentLinkStatus order={row.order} now={now} />
             <div className="review-panel__actions">
-              <button type="button" className="admin__button admin__button--danger" onClick={() => ask(row, 'reject')}><FiXCircle aria-hidden="true" /> Reject</button>
+              <button type="button" className="admin__button" disabled={resending === row.id} onClick={() => { void emailPaymentLink(row) }}>
+                <FiCreditCard aria-hidden="true" /> {resending === row.id ? 'Sending…' : row.order.payment_link ? 'Send a new payment link' : 'Send payment link'}
+              </button>
             </div>
           </>
         )}
@@ -227,9 +243,12 @@ export default function ReviewPage() {
             </p>
             {copy?.needsReason ? (
               <label className="confirm-dialog__field">
-                {pending.decision === 'changes' ? 'What needs to change?' : 'Why is it rejected?'}
-                <textarea value={reason} maxLength={1000} onChange={(event) => setReason(event.target.value)} />
-                <small>Recorded with your name in the job order and the audit log.</small>
+                Message to the employer: what needs to change?
+                <textarea value={reason} maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder="For example: Please add the salary range and the working hours." />
+                <small>
+                  We email this message to {pending.row.email || 'the employer'} with a private link to update the job order. They do not pay again.
+                  Write it for the employer. It is also recorded with your name in the audit log.
+                </small>
               </label>
             ) : (
               <p>It will appear in the review queue again so a team member can approve it or ask for changes.</p>
@@ -240,7 +259,7 @@ export default function ReviewPage() {
 
       <ConfirmDialog
         open={manualLink !== null}
-        title="Send the update link to the employer"
+        title={manualLink?.kind === 'payment' ? 'Send the payment link to the employer' : 'Send the update link to the employer'}
         confirmLabel="Done"
         tone="neutral"
         onConfirm={() => setManualLink(null)}
@@ -252,12 +271,16 @@ export default function ReviewPage() {
               {manualLink.emailStatus === 'failed'
                 ? 'The email could not be sent.'
                 : 'Email sending is not set up yet.'}{' '}
-              Copy this private link and send it to {manualLink.sentTo ?? 'the employer'} yourself, so they can update “{manualLink.role}”.
+              Copy this private link and send it to {manualLink.sentTo ?? 'the employer'} yourself, so they can {manualLink.kind === 'payment' ? 'pay for' : 'update'} “{manualLink.role}”.
             </p>
             <label className="confirm-dialog__field">
-              Private update link
+              {manualLink.kind === 'payment' ? 'Private payment link' : 'Private update link'}
               <input readOnly value={manualLink.link ?? ''} onFocus={(event) => event.currentTarget.select()} />
-              <small>It works once and expires on {manualLink.expiresAt ? formatDateDmy(manualLink.expiresAt) : 'in 7 days'}. Send it only to the employer; anyone with it can edit this job order.</small>
+              <small>
+                {manualLink.kind === 'payment'
+                  ? `It expires on ${manualLink.expiresAt ? formatDateDmy(manualLink.expiresAt) : 'in 7 days'}. Send it only to the employer.`
+                  : `It works once and expires on ${manualLink.expiresAt ? formatDateDmy(manualLink.expiresAt) : 'in 7 days'}. Send it only to the employer; anyone with it can edit this job order.`}
+              </small>
             </label>
             <button
               type="button"
@@ -283,4 +306,28 @@ function ChangeLinkStatus({ order, now }: { order: StaffInquiry; now: number }) 
       : link.email_status === 'sent' ? `Emailed to ${String(order.details?.email ?? 'the employer')} on ${formatDateDmy(link.emailed_at ?? link.requested_at)} · expires ${formatDateDmy(link.expires_at)}`
         : `Not emailed (${link.email_status === 'failed' ? 'email failed' : 'email not set up'}). Send a new link to get a link you can copy · expires ${formatDateDmy(link.expires_at)}`
   return <p className={`review-panel__link${expired ? ' is-expired' : ''}`}><FiMail aria-hidden="true" /> Update link: {status}.</p>
+}
+
+/** Which fields the employer changed when they resubmitted. */
+function ChangedFields({ value }: { value: unknown }) {
+  if (!Array.isArray(value)) return null
+  const fields = value.filter((item): item is string => typeof item === 'string')
+  return (
+    <p className="review-panel__changed">
+      {fields.length ? <><strong>Changed:</strong> {fields.join(', ')}.</> : 'The employer resubmitted without changing any fields.'}
+    </p>
+  )
+}
+
+/** Where the staff-sent payment link stands. */
+function PaymentLinkStatus({ order, now }: { order: StaffInquiry; now: number }) {
+  const link = order.payment_link
+  if (!link) return null
+  const expired = !link.revoked_at && Date.parse(link.expires_at) < now
+  const by = link.created_by_name ? ` by ${link.created_by_name}` : ''
+  const status = link.revoked_at ? 'Replaced or cancelled'
+    : expired ? `Expired on ${formatDateDmy(link.expires_at)}. Send a new payment link if they still want to pay`
+      : link.email_status === 'sent' ? `Emailed${by} on ${formatDateDmy(link.emailed_at ?? link.created_at)} · expires ${formatDateDmy(link.expires_at)}`
+        : `Not emailed (${link.email_status === 'failed' ? 'email failed' : 'email not set up'}). Send a new payment link to get a link you can copy`
+  return <p className={`review-panel__link${expired ? ' is-expired' : ''}`}><FiCreditCard aria-hidden="true" /> Payment link: {status}.</p>
 }

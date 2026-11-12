@@ -93,7 +93,7 @@ const bodyRows = (page) => page.locator('tbody tr:not(.data-table__details-row):
   ok('review queue opens filtered to "Awaiting review"', await bodyRows(page).count() === 2 && (await bodyRows(page).allInnerTexts()).every((t) => t.includes('Awaiting review')))
   ok('each job order shows an ORD- reference', (await bodyRows(page).first().innerText()).match(/ORD-[0-9A-F]{8}/) !== null)
   await page.getByRole('button', { name: 'Show details' }).first().click()
-  ok('opening a job order shows its details and the three decisions', await page.getByRole('button', { name: /Approve & publish/ }).isVisible() && await page.getByRole('button', { name: 'Request changes' }).isVisible() && await page.getByRole('button', { name: 'Reject' }).isVisible())
+  ok('opening a job order shows its details and the two decisions (no reject)', await page.getByRole('button', { name: /Approve & publish/ }).isVisible() && await page.getByRole('button', { name: 'Request changes' }).isVisible() && await page.getByRole('button', { name: /Reject/ }).count() === 0)
 
   // Request changes
   await page.getByRole('button', { name: 'Request changes' }).click()
@@ -129,7 +129,7 @@ const bodyRows = (page) => page.locator('tbody tr:not(.data-table__details-row):
   // Unpaid orders cannot be approved
   await page.locator('select').first().selectOption('awaiting-payment')
   await page.getByRole('button', { name: 'Show details' }).first().click()
-  ok('unpaid orders explain why they cannot be approved, offer reject only', await page.getByText('has not been paid yet').isVisible() && await page.getByRole('button', { name: /Approve/ }).count() === 0)
+  ok('unpaid orders explain why they cannot be approved and offer a payment link', await page.getByText('has not been paid yet').isVisible() && await page.getByRole('button', { name: /Approve/ }).count() === 0 && await page.getByRole('button', { name: 'Send payment link' }).isVisible() && await page.getByRole('button', { name: /Reject/ }).count() === 0)
 
   // Changes requested: reason shown, can reopen
   await page.locator('select').first().selectOption('changes')

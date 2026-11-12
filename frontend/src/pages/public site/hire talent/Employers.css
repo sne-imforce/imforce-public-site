@@ -238,37 +238,30 @@
   font: 600 14px/1.55 var(--font-interface);
 }
 
-.employers-payment-toast {
-  position: fixed;
-  z-index: 1000;
-  top: 22px;
-  right: 22px;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  width: min(440px, calc(100vw - 32px));
-  padding: 17px 19px;
-  border: 1px solid #b8dfca;
-  border-radius: 14px;
+.employers-confirmation {
+  padding: 28px 0;
+  border-bottom: 1px solid #b8dfca;
   background: #f1fbf5;
   color: #174c34;
-  box-shadow: 0 14px 38px rgb(16 52 34 / 20%);
-  font: 600 14px/1.55 var(--font-interface);
-  opacity: 0;
-  transform: translateY(-10px);
-  transition: opacity 300ms ease-in-out, transform 300ms ease-in-out;
+  font: 500 16px/1.6 var(--font-interface);
+  scroll-margin-top: 90px;
 }
-
-.employers-payment-toast svg { flex: 0 0 auto; margin-top: 1px; color: #218354; font-size: 20px; }
-.employers-payment-toast.is-visible { opacity: 1; transform: translateY(0); }
+.employers-confirmation:focus { outline: none; }
+.employers-confirmation:focus-visible { outline: 3px solid #218354; outline-offset: -3px; }
+.employers-confirmation__inner { display: flex; gap: 18px; align-items: flex-start; }
+.employers-confirmation__icon { flex: 0 0 auto; margin-top: 4px; color: #218354; font-size: 34px; }
+.employers-confirmation h2 { margin: 0 0 6px; color: #0f3d29; font-size: clamp(22px, 3vw, 28px); line-height: 1.25; }
+.employers-confirmation h3 { margin: 18px 0 6px; color: #0f3d29; font-size: 17px; }
+.employers-confirmation p { margin: 0 0 10px; }
+.employers-confirmation ol { margin: 0 0 14px; padding-left: 22px; }
+.employers-confirmation li { margin-bottom: 6px; }
+.employers-confirmation a { color: #0f5c3a; font-weight: 700; }
+.employers-confirmation__reference strong { font-size: 18px; letter-spacing: 0.04em; }
 
 @media (max-width: 560px) {
-  .employers-payment-toast { top: 12px; right: 12px; width: calc(100vw - 24px); }
+  .employers-confirmation__inner { flex-direction: column; gap: 8px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .employers-payment-toast { transition: none; }
-}
 
 .employers-form-errors {
   margin: 22px 0;

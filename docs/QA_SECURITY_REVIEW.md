@@ -83,7 +83,7 @@ Staff now sign in with a **username** instead of their email, and the workspace 
 **Safety measures:**
 - The link token is 256 bits, stored only as a SHA-256 hash.
 - It's carried after `#`, so it never reaches server logs or referrers, and the page removes it from the address bar. It's sent to the API only in a request body.
-- It works once and expires after 7 days (the database enforces a 15-day maximum). It's cancelled by a new link and by approve, reject or reopen.
+- It works once and expires after 7 days (the database enforces a 15-day maximum). It's cancelled by a new link and by approve or reopen.
 - Unknown fields, the contact email and payment data can't be changed, and the same validation as the original order applies.
 - Rate limits apply, invalid links feed the intrusion alarm, and both steps are audited.
 - In the email, the reason is HTML-escaped and the subject and address are checked for header injection.
@@ -94,6 +94,28 @@ Staff now sign in with a **username** instead of their email, and the workspace 
 - Re-running migrations 007 and 008 failed once the append-only log held newer actions. The action lists are now `NOT VALID`.
 - Two dialogs on one page shared a fixed `id`, so screen readers announced the wrong title. Dialogs now use unique ids.
 - Internal fields showed the employer's earlier request twice. They're now hidden from the details list.
+
+### Round 8 (12 November 2026): end-to-end employer journey (PM and end-user review)
+
+A walk-through as a project manager and as an employer found these gaps. All are fixed.
+
+| # | Gap | Fix |
+|---|---|---|
+| J-1 | After paying, the employer got no email, and the on-screen confirmation vanished after 3 seconds. | **We received your job order** email (with the `ORD-` reference and "review within 1 business day"), sent once even when the webhook and the return page both confirm. A confirmation panel stays on screen until dismissed. |
+| J-2 | The employer was never told their advert went live. | **Your job advert is live** email with a link to the advert. Staff see whether it was sent. |
+| J-3 | The staff dialog did not say the message is sent to the employer. | Now reads "Message to the employer: what needs to change?" and names the address it is emailed to. |
+| J-4 | Rejecting a paid order kept the R499 with no way forward for the employer. | **Rejection removed** (IMFORCE decision): staff approve or request changes; the employer can always fix and resubmit. No refunds. The API refuses `reject` (400). Older closed orders show as *Closed (older decision)* and can be reopened. |
+| J-5 | On resubmission, staff had to re-read the whole order. | The changed fields are recorded (`lastChangedFields`) and shown as **Changed:** in the review panel and the audit log. |
+| J-6 | Retrying checkout created a duplicate order; staff had no way to chase an unpaid order; a late payment on an old Paystack tab was not matched. | The tab keeps a private resume token and pays for the same order. Staff can **Send payment link** (`/employers/complete-payment`). Every earlier reference is kept and matched. |
+
+**Safety measures (migration 010):**
+- Payment links use the same design as update links: 256-bit token, SHA-256 hash stored, carried after `#`, removed from the address bar, POST body only, 7-day expiry (15-day database maximum), revoked once paid.
+- Staff-sent links can only pay; they cannot change the order. Only the tab's own checkout link can submit corrections, and those are validated again.
+- Starting a checkout only writes while the order is unpaid (`details->>paymentStatus=neq.paid`). A payment confirmed by the webhook at the same moment is never overwritten, and the employer is told there is nothing more to pay.
+- The confirmation email is sent by whichever caller atomically claims the paid status, so there is no duplicate.
+- Invalid payment links feed the intrusion alarm (`invalid-payment-link`, low). Public endpoints share the 6/min public-write limit.
+
+**Defect found and fixed during this round:** the database check script only applied migrations named `00*`, so migration 010 was silently skipped. It now applies every numbered migration.
 
 ---
 
@@ -214,13 +236,13 @@ All results were reproduced in the final QA pass. Commands:
 
 | Layer | Command | Result |
 |---|---|---|
-| API and security unit/integration | `cd backend && npm test` | **81 / 81 passed** (including 11 change-request link, 9 advert-review, 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
-| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **55 / 55 passed** on repeated runs; migrations 001–009 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
-| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **86 / 86 passed** |
+| API and security unit/integration | `cd backend && npm test` | **89 / 89 passed** (including 7 employer-journey (payment resume, late payment, single confirmation email, staff payment link, approval email, changed fields), 11 change-request link, 9 advert-review, 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
+| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **63 / 63 passed** on repeated runs; migrations 001–010 re-run safely; payment links hidden from anon/authenticated, hash-only, expiry and purpose enforced; 006 username backfill (duplicates, short and odd email prefixes) |
+| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **87 / 87 passed** |
 | Loading states (API deliberately slowed) | `node qa/e2e-loading.cjs` | **9 / 9 passed** |
-| Request changes (employer update page and staff side) | `node qa/e2e-changes.cjs` | **26 / 26 passed** on 3 consecutive runs; token removed from the URL and never sent in a URL; axe 0 violations |
-| Advert review and notifications | `node qa/e2e-review.cjs` | **33 / 33 passed**: queue, request changes, approve & publish (pre-filled), unpaid refused, reopen, notifications feed, filters, new/seen, deep links, reference collisions, phone layout; axe 0 violations |
-| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **45 / 45 passed**: agent name in header, tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
+| Employer journey: update page, payment page, confirmation, checkout retry, staff side | `node qa/e2e-changes.cjs` | **43 / 43 passed**: tokens removed from the URL and never sent in a URL; no reject option; message-to-employer wording; changed fields; send payment link; pay for the existing order; confirmation stays on screen; retry pays the same order; axe 0 violations |
+| Advert review and notifications | `node qa/e2e-review.cjs` | **35 / 35 passed**: queue, request changes, approve & publish (pre-filled), no reject option, unpaid refused with payment link offered, reopen, notifications feed, filters, new/seen, deep links, reference collisions, phone layout; axe 0 violations |
+| Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **46 / 46 passed**: agent name in header, tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
 | Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |
 | Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |
 | Live server smoke | `npm start`: health, honeypot alarm, access log, SIGTERM | Pass |
@@ -241,5 +263,7 @@ Test design notes: the API suite mocks Supabase, Paystack and the alert webhook 
 - [ ] Set `SECURITY_ALERT_WEBHOOK_URL` to a monitored Slack or Teams channel and trigger a test (`curl https://<api>/api/admin` from a non-allowlisted network should produce an alert).
 - [ ] Set `TRUST_PROXY_HOPS` correctly (check that `security_events.ip_address` shows real client IPs, not the proxy's).
 - [ ] Have the privacy notice reviewed by IMFORCE (OPEN-1). Repository protections (OPEN-5). Disable public sign-up in Supabase (OPEN-7).
+- [ ] Run migrations `008`, `009` and `010` on Supabase (advert review, update links, payment links).
+- [ ] Configure SMTP (`SMTP_HOST` …, `EMAIL_FROM`, `PUBLIC_SITE_URL`) so employers receive the confirmation, changes, payment-link and advert-live emails; send a test to an internal mailbox.
 - [ ] Paystack test-mode payment and webhook verified end to end, then switch to live keys.
 - [ ] Independent penetration test, remediation, retest, and **written IMFORCE approval** (scope §10).

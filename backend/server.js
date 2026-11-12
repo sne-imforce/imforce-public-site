@@ -457,20 +457,20 @@ async function verifyPaystackTransaction(reference) {
 }
 
 async function findEmployerOrderByPaymentReference(reference) {
-  const query = new URLSearchParams({
-    select: 'id,details',
-    'details->>paymentReference': `eq.${reference}`,
-    limit: '1',
-  })
-  const rows = await supabase(`/rest/v1/employer_inquiries?${query.toString()}`)
-  return rows[0] ?? null
+  const select = 'id,details,review_status'
+  const [current] = await supabase(`/rest/v1/employer_inquiries?${new URLSearchParams({ select, 'details->>paymentReference': `eq.${reference}`, limit: '1' })}`)
+  if (current) return current
+  // An older checkout of the same order (e.g. an old Paystack tab paid later).
+  const [earlier] = await supabase(`/rest/v1/employer_inquiries?${new URLSearchParams({ select, 'details->paymentReferences': `cs.${JSON.stringify([reference])}`, limit: '1' })}`)
+  return earlier ?? null
 }
 
 async function confirmPaystackPayment(reference) {
   const record = await findEmployerOrderByPaymentReference(reference)
   if (!record) return { found: false, paid: false }
   const details = record.details
-  if (details.paymentStatus === 'paid') return { found: true, paid: true }
+  const orderRef = orderReference(record.id)
+  if (details.paymentStatus === 'paid') return { found: true, paid: true, orderRef }
 
   const transaction = await verifyPaystackTransaction(reference)
   const isPaid = transaction.status === 'success'
@@ -478,23 +478,104 @@ async function confirmPaystackPayment(reference) {
     && transaction.amount === activationFeeMinor
     && transaction.currency === activationFeeCurrency
     && transaction.customer?.email?.toLowerCase() === details.email?.toLowerCase()
-  if (!isPaid) return { found: true, paid: false }
+  if (!isPaid) return { found: true, paid: false, orderRef }
 
   const paymentDetails = {
     ...details,
     paymentStatus: 'paid',
+    paymentReference: reference,
     paymentAmountMinor: activationFeeMinor,
     paymentCurrency: activationFeeCurrency,
     paymentPaidAt: transaction.paid_at ?? new Date().toISOString(),
     paymentChannel: typeof transaction.channel === 'string' ? transaction.channel : null,
     paystackTransactionId: String(transaction.id),
   }
-  await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(record.id)}`, {
-    method: 'PATCH',
-    body: { details: paymentDetails },
-    prefer: 'return=minimal',
+  // Only one caller (return page or webhook) records the payment and sends the email.
+  const claimed = await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(record.id)}&details->>paymentStatus=neq.paid`, {
+    method: 'PATCH', body: { details: paymentDetails }, prefer: 'return=representation',
   })
-  return { found: true, paid: true }
+  if (claimed?.length) {
+    await revokePaymentLinks(record.id)
+    await sendEmployerEmail({ ...record, details: paymentDetails }, `We received your job order: ${String(details.jobTitle ?? 'job advert')} (${orderRef})`, {
+      intro: [
+        `Thank you. We received your ZAR 499 activation fee for the job order "${String(details.jobTitle ?? '')}" (reference ${orderRef}).`,
+        'What happens next: an IMFORCE team member will review your advert within 1 business day. We will email you as soon as it is live, or if anything needs to change.',
+      ],
+      after: ['Paystack sends your proof of payment separately.'],
+    })
+  }
+  return { found: true, paid: true, orderRef }
+}
+
+// Starts a Paystack checkout for an existing job order with a fresh reference,
+// remembering earlier references so a late payment is still matched.
+async function startPaystackCheckout(order) {
+  const reference = `IMF-${crypto.randomUUID()}`
+  const earlier = Array.isArray(order.details?.paymentReferences) ? order.details.paymentReferences
+    : order.details?.paymentReference ? [order.details.paymentReference] : []
+  const pendingDetails = {
+    ...order.details,
+    paymentStatus: 'initializing',
+    paymentReference: reference,
+    paymentReferences: [...earlier, reference].slice(-20),
+    paymentAmountMinor: activationFeeMinor,
+    paymentCurrency: activationFeeCurrency,
+  }
+  // Never overwrite a payment that was confirmed meanwhile (e.g. by the webhook).
+  const patch = (status) => supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(order.id)}&details->>paymentStatus=neq.paid`, {
+    method: 'PATCH', body: { details: { ...pendingDetails, paymentStatus: status } }, prefer: 'return=representation',
+  })
+  const started = await patch('initializing')
+  if (!started?.length) throw Object.assign(new Error('Already paid'), { alreadyPaid: true })
+  try {
+    const response = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: paystackHeaders(),
+      body: JSON.stringify({ email: pendingDetails.email, amount: String(activationFeeMinor), currency: activationFeeCurrency, reference, callback_url: paystackCallbackUrl }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const result = await response.json().catch(() => null)
+    const authorizationUrl = result?.data?.authorization_url
+    let isPaystackCheckout = false
+    try {
+      const parsed = new URL(authorizationUrl)
+      isPaystackCheckout = parsed.protocol === 'https:' && parsed.hostname === 'checkout.paystack.com'
+    } catch { isPaystackCheckout = false }
+    if (!response.ok || result?.status !== true || !isPaystackCheckout || result.data.reference !== reference) throw new Error('Invalid checkout URL')
+    await patch('pending')
+    return { authorizationUrl, reference }
+  } catch (error) {
+    await patch('initialization_failed').catch(() => {})
+    throw error
+  }
+}
+
+// Private payment links (migration 010): only the token hash is stored.
+const paymentLinkDays = 7
+async function createPaymentLink(orderId, purpose, staff = null) {
+  const token = crypto.randomBytes(32).toString('base64url')
+  const [link] = await supabase('/rest/v1/job_order_payment_links', {
+    method: 'POST', prefer: 'return=representation',
+    body: {
+      order_id: orderId, token_hash: sha256(token), purpose,
+      created_by: staff?.id ?? null, created_by_name: staff?.name ?? null,
+      expires_at: new Date(Date.now() + paymentLinkDays * 86_400_000).toISOString(),
+    },
+  })
+  return purpose === 'staff' ? { token, link } : token
+}
+async function findPaymentLink(token) {
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null
+  const query = new URLSearchParams({ select: 'id,order_id,purpose,expires_at', token_hash: `eq.${sha256(token)}`, revoked_at: 'is.null', expires_at: `gt.${new Date().toISOString()}`, limit: '1' })
+  const [link] = await supabase(`/rest/v1/job_order_payment_links?${query}`)
+  if (!link) return null
+  const [order] = await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(link.order_id)}&select=id,details,review_status`)
+  return order ? { link, order } : null
+}
+async function revokePaymentLinks(orderId, purpose = null) {
+  await supabase(`/rest/v1/job_order_payment_links?order_id=eq.${encodeURIComponent(orderId)}&revoked_at=is.null${purpose ? `&purpose=eq.${purpose}` : ''}`, {
+    method: 'PATCH', body: { revoked_at: new Date().toISOString() }, prefer: 'return=minimal',
+  }).catch(() => { /* table may not exist before migration 010 */ })
 }
 
 app.post('/api/payments/paystack/initialize', async (req, res) => {
@@ -513,67 +594,79 @@ app.post('/api/payments/paystack/initialize', async (req, res) => {
   const validation = validateEmployerOrder(details)
   if (validation) return res.status(400).json(validation)
 
-  const reference = `IMF-${crypto.randomUUID()}`
-  const pendingDetails = {
-    ...details,
-    email: details.email.trim().toLowerCase(),
-    paymentStatus: 'initializing',
-    paymentReference: reference,
-    paymentAmountMinor: activationFeeMinor,
-    paymentCurrency: activationFeeCurrency,
-  }
-  let inquiry
+  const normalizedDetails = { ...details, email: details.email.trim().toLowerCase() }
+  let order
   try {
-    const saved = await supabase('/rest/v1/employer_inquiries', {
-      method: 'POST',
-      body: { details: pendingDetails },
-      prefer: 'return=representation',
+    ;[order] = await supabase('/rest/v1/employer_inquiries', {
+      method: 'POST', prefer: 'return=representation',
+      body: { details: { ...normalizedDetails, paymentStatus: 'initializing', paymentAmountMinor: activationFeeMinor, paymentCurrency: activationFeeCurrency } },
     })
-    inquiry = saved[0]
-    if (!inquiry?.id) throw new Error('The job order record was not returned.')
+    if (!order?.id) throw new Error('The job order record was not returned.')
   } catch {
     return res.status(502).json({ error: 'We could not save the job order securely. Please try again.' })
   }
-
+  // Lets this browser tab retry payment for the SAME job order (no duplicates).
+  const resumeToken = await createPaymentLink(order.id, 'checkout').catch(() => null)
   try {
-    const response = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST',
-      headers: paystackHeaders(),
-      body: JSON.stringify({
-        email: pendingDetails.email,
-        amount: String(activationFeeMinor),
-        currency: activationFeeCurrency,
-        reference,
-        callback_url: paystackCallbackUrl,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    const result = await response.json().catch(() => null)
-    const authorizationUrl = result?.data?.authorization_url
-    let isPaystackCheckout = false
-    try {
-      const parsed = new URL(authorizationUrl)
-      isPaystackCheckout = parsed.protocol === 'https:' && parsed.hostname === 'checkout.paystack.com'
-    } catch { isPaystackCheckout = false }
-    if (!response.ok || result?.status !== true || !isPaystackCheckout || result.data.reference !== reference) {
-      throw new Error('Paystack did not return a valid checkout URL.')
-    }
-    await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(inquiry.id)}`, {
-      method: 'PATCH',
-      body: { details: { ...pendingDetails, paymentStatus: 'pending' } },
-      prefer: 'return=minimal',
-    })
-    return res.status(201).json({ authorizationUrl, reference })
+    const checkout = await startPaystackCheckout(order)
+    return res.status(201).json({ ...checkout, resumeToken })
   } catch {
-    try {
-      await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(inquiry.id)}`, {
-        method: 'PATCH',
-        body: { details: { ...pendingDetails, paymentStatus: 'initialization_failed' } },
-        prefer: 'return=minimal',
-      })
-    } catch { /* Keep the original checkout error response. */ }
-    return res.status(502).json({ error: 'Paystack checkout could not be started. Your job order was saved; please try checkout again.' })
+    return res.status(502).json({ error: 'Paystack checkout could not be started. Your job order was saved; please try checkout again.', resumeToken })
   }
+})
+
+// Pay for an existing, unpaid job order: a retry from the same tab ('checkout'
+// link, may also update the details) or a staff-sent payment link ('staff').
+const invalidPaymentLink = 'This payment link is invalid or has expired. Contact IMFORCE and we will send you a new one.'
+app.post('/api/payments/paystack/resume', async (req, res) => {
+  if (!requireConfig(res)) return
+  if (!paystackSecretKey) return res.status(503).json({ error: 'Secure checkout is not configured yet. Please contact IMFORCE.' })
+  let found
+  try { found = await findPaymentLink(req.body?.token) } catch { return res.status(502).json({ error: 'Your job order could not be loaded. Please try again.' }) }
+  if (!found) {
+    security.record(req, 'invalid-payment-link', 'low', 'Payment link that is invalid or expired')
+    return res.status(404).json({ error: invalidPaymentLink })
+  }
+  let { order } = found
+  if (order.details?.paymentStatus === 'paid') return res.status(409).json({ error: 'This job order is already paid. There is nothing more to pay.', alreadyPaid: true })
+  if (order.review_status === 'rejected') return res.status(409).json({ error: 'This job order was closed by IMFORCE. Contact us before paying.' })
+  const submitted = req.body?.details
+  if (submitted !== undefined) {
+    if (found.link.purpose !== 'checkout') return res.status(400).json({ error: 'This link can only be used to pay.' })
+    if (!submitted || typeof submitted !== 'object' || Array.isArray(submitted)) return res.status(400).json({ error: 'The job order details were not received correctly.' })
+    if (typeof submitted.extraNotesHp === 'string' && submitted.extraNotesHp) {
+      security.record(req, 'bot-honeypot-field', 'medium', 'Hidden job order form field was filled')
+      return res.status(400).json({ error: 'The job order could not be accepted. Please contact IMFORCE.' })
+    }
+    const { extraNotesHp, website, ...fields } = submitted
+    void extraNotesHp; void website
+    const validation = validateEmployerOrder(fields)
+    if (validation) return res.status(400).json(validation)
+    order = { ...order, details: { ...order.details, ...fields, email: fields.email.trim().toLowerCase() } }
+  }
+  try {
+    res.json(await startPaystackCheckout(order))
+  } catch (error) {
+    if (error.alreadyPaid) return res.status(409).json({ error: 'This job order is already paid. There is nothing more to pay.', alreadyPaid: true })
+    res.status(502).json({ error: 'Paystack checkout could not be started. Please try again in a moment.' })
+  }
+})
+
+// Staff-sent payment link page: what is being paid for.
+app.post('/api/payments/link/open', async (req, res) => {
+  if (!requireConfig(res)) return
+  let found
+  try { found = await findPaymentLink(req.body?.token) } catch { return res.status(502).json({ error: 'Your job order could not be loaded. Please try again.' }) }
+  if (!found) {
+    security.record(req, 'invalid-payment-link', 'low', 'Payment link that is invalid or expired')
+    return res.status(404).json({ error: invalidPaymentLink })
+  }
+  const details = found.order.details ?? {}
+  res.set('Cache-Control', 'no-store')
+  res.json({
+    reference: orderReference(found.order.id), jobTitle: details.jobTitle ?? '', company: details.legalName ?? '',
+    amount: 'ZAR 499', paid: details.paymentStatus === 'paid', closed: found.order.review_status === 'rejected', expiresAt: found.link.expires_at,
+  })
 })
 
 app.post('/api/payments/paystack/verify', async (req, res) => {
@@ -590,7 +683,7 @@ app.post('/api/payments/paystack/verify', async (req, res) => {
       return res.status(404).json({ error: 'No job order was found for this payment reference. Contact IMFORCE before trying to pay again.' })
     }
     if (!result.paid) return res.status(402).json({ error: 'Paystack has not confirmed the ZAR 499 payment. If your bank shows a debit, contact IMFORCE before trying again.' })
-    return res.json({ paid: true, message: 'Payment received. Your job order was sent to IMFORCE for the next step.' })
+    return res.json({ paid: true, reference: result.orderRef, message: `Payment received. Your job order ${result.orderRef} is with our team, and we will review your advert within 1 business day.` })
   } catch {
     return res.status(502).json({ error: 'Payment verification is temporarily unavailable. Do not pay again yet; refresh this page or contact IMFORCE.' })
   }
@@ -864,7 +957,10 @@ app.get('/api/staff/inquiries', requireStaff, async (req, res) => {
     const changeRequests = await supabase('/rest/v1/job_order_change_requests?select=order_id,reason,requested_by_name,requested_at,expires_at,email_status,emailed_at,responded_at,revoked_at&order=requested_at.desc&limit=1000').catch(() => [])
     const latestChange = new Map()
     for (const row of changeRequests) if (!latestChange.has(row.order_id)) latestChange.set(row.order_id, row)
-    const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer', change_request: latestChange.get(item.id) ?? null }))]
+    const paymentLinks = await supabase('/rest/v1/job_order_payment_links?select=order_id,created_by_name,created_at,expires_at,email_status,emailed_at,revoked_at&purpose=eq.staff&order=created_at.desc&limit=1000').catch(() => [])
+    const latestPaymentLink = new Map()
+    for (const row of paymentLinks) if (!latestPaymentLink.has(row.order_id)) latestPaymentLink.set(row.order_id, row)
+    const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer', change_request: latestChange.get(item.id) ?? null, payment_link: latestPaymentLink.get(item.id) ?? null }))]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     // Enquiries hold personal information, so viewing them is itself audited (POPIA accountability).
     await audit(req, 'enquiries.view', { entityType: 'enquiries', detail: { count: inquiries.length } })
@@ -880,7 +976,8 @@ app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
   } catch (error) { res.status(error.status === 400 ? 400 : 502).json({ error: error.status === 400 ? error.message : 'Vacancy could not be saved.' }) }
 })
 // Advert review: an IMFORCE team member approves a paid job order before it
-// goes online, or requests changes / rejects it with a reason.
+// goes online, or asks the employer for changes. Job orders are never rejected:
+// the employer is always given the chance to fix the advert.
 // --- "Request changes": private, one-time link for the employer -------------
 const changeLinkDays = 7
 const changeTokenPattern = /^[A-Za-z0-9_-]{43}$/
@@ -894,30 +991,50 @@ async function revokeChangeLinks(orderId) {
   }).catch(() => { /* table may not exist before migration 009 */ })
 }
 
-function changeRequestEmail(order, reason, link, expiresAt) {
-  const details = order.details ?? {}
-  const title = String(details.jobTitle ?? 'your job order')
-  const name = String(details.contactName ?? '').split(/\s+/)[0] || 'there'
-  const reference = orderReference(order.id)
-  const expires = new Intl.DateTimeFormat('en-ZA', { timeZone: 'Africa/Johannesburg', day: 'numeric', month: 'long', year: 'numeric' }).format(expiresAt)
+const formatLongDate = (date) => new Intl.DateTimeFormat('en-ZA', { timeZone: 'Africa/Johannesburg', day: 'numeric', month: 'long', year: 'numeric' }).format(date)
+const contactLine = 'If you have any questions, reply to this email or call 033 492 0600.'
+
+// One layout for every employer email: plain text plus simple, escaped HTML.
+function employerEmail(order, { intro = [], quote = '', button = null, footnote = '', after = [] }) {
+  const name = String(order.details?.contactName ?? '').split(/\s+/)[0] || 'there'
   const text = [
     `Hello ${name},`, '',
-    `Thank you for your job order for "${title}" (reference ${reference}). Before we publish the advert, our team needs a few changes:`, '',
-    reason, '',
-    `Update your job order using this private link. It works once and expires on ${expires}:`,
-    link, '',
-    'You do not need to pay again. If you have any questions, reply to this email or call 033 492 0600.', '',
+    ...intro.flatMap((line) => [line, '']),
+    ...(quote ? [quote, ''] : []),
+    ...(button ? [`${button.label}: ${button.href}`, ''] : []),
+    ...(footnote ? [footnote, ''] : []),
+    ...[...after, contactLine].flatMap((line) => [line, '']),
     'IMFORCE Talent Recruitment',
   ].join('\n')
+  const paragraph = (line) => `<p>${escapeHtml(line)}</p>`
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#15191f;max-width:560px">
 <p>Hello ${escapeHtml(name)},</p>
-<p>Thank you for your job order for <strong>${escapeHtml(title)}</strong> (reference ${escapeHtml(reference)}). Before we publish the advert, our team needs a few changes:</p>
-<blockquote style="margin:16px 0;padding:12px 16px;border-left:4px solid #e2a93b;background:#fff8e8;white-space:pre-line">${escapeHtml(reason)}</blockquote>
-<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:#012e6f;color:#ffffff;text-decoration:none;font-weight:bold">Update my job order</a></p>
-<p style="color:#5b6575;font-size:13px">This private link works once and expires on ${escapeHtml(expires)}. Do not forward it.</p>
-<p>You do not need to pay again. If you have any questions, reply to this email or call 033 492 0600.</p>
+${intro.map(paragraph).join('\n')}
+${quote ? `<blockquote style="margin:16px 0;padding:12px 16px;border-left:4px solid #e2a93b;background:#fff8e8;white-space:pre-line">${escapeHtml(quote)}</blockquote>` : ''}
+${button ? `<p><a href="${escapeHtml(button.href)}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:#012e6f;color:#ffffff;text-decoration:none;font-weight:bold">${escapeHtml(button.label)}</a></p>` : ''}
+${footnote ? `<p style="color:#5b6575;font-size:13px">${escapeHtml(footnote)}</p>` : ''}
+${[...after, contactLine].map(paragraph).join('\n')}
 <p>IMFORCE Talent Recruitment</p></div>`
-  return { subject: `Changes needed to your IMFORCE job advert: ${title}`, text, html }
+  return { text, html }
+}
+const sendEmployerEmail = (order, subject, content) =>
+  mailer.send({ to: String(order.details?.email ?? ''), subject, ...employerEmail(order, content) })
+
+// "Request changes" email with the private update link.
+function changeRequestEmail(order, reason, link, expiresAt) {
+  const title = String(order.details?.jobTitle ?? 'your job order')
+  const reference = orderReference(order.id)
+  const footnote = `This private link works once and expires on ${formatLongDate(expiresAt)}. Do not forward it.`
+  return {
+    subject: `Changes needed to your IMFORCE job advert: ${title}`,
+    content: {
+      intro: [`Thank you for your job order for "${title}" (reference ${reference}). Before we publish the advert, our team needs a few changes:`],
+      quote: reason,
+      button: { label: 'Update my job order', href: link },
+      footnote,
+      after: ['You do not need to pay again.'],
+    },
+  }
 }
 
 // Creates a new link (revoking any earlier one), emails it, and reports the result.
@@ -938,7 +1055,7 @@ async function issueChangeLink(req, order, reason) {
   // The token goes after '#', so it is never sent to servers, logs or analytics.
   const link = `${publicSiteUrl}/employers/update-job-order#token=${token}`
   const email = changeRequestEmail(order, reason, link, expiresAt)
-  const { status } = await mailer.send({ to: String(order.details?.email ?? ''), ...email })
+  const { status } = await sendEmployerEmail(order, email.subject, email.content)
   await supabase(`/rest/v1/job_order_change_requests?id=eq.${encodeURIComponent(request.id)}`, {
     method: 'PATCH', prefer: 'return=minimal',
     body: { email_status: status, emailed_at: status === 'sent' ? new Date().toISOString() : null },
@@ -949,7 +1066,6 @@ async function issueChangeLink(req, order, reason) {
 const reviewDecisions = {
   approve: { status: 'approved', action: 'advert.approve' },
   changes: { status: 'changes_requested', action: 'advert.request_changes' },
-  reject: { status: 'rejected', action: 'advert.reject' },
   reopen: { status: 'pending', action: 'advert.reopen' },
 }
 
@@ -959,9 +1075,9 @@ app.post('/api/staff/job-orders/:id/review', requireStaff, async (req, res) => {
     return res.status(404).json({ error: 'Job order not found.' })
   }
   const decision = reviewDecisions[req.body?.decision]
-  if (!decision) return res.status(400).json({ error: 'Choose approve, request changes, reject or reopen.' })
+  if (!decision) return res.status(400).json({ error: 'Choose approve, request changes or move back to review.' })
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : ''
-  if ((decision.status === 'changes_requested' || decision.status === 'rejected') && (reason.length < 5 || reason.length > 1000)) {
+  if (decision.status === 'changes_requested' && (reason.length < 5 || reason.length > 1000)) {
     return res.status(400).json({ error: 'Explain the decision in 5 to 1,000 characters so the team and the employer know what to do next.' })
   }
   let vacancyRow = null
@@ -1006,18 +1122,31 @@ app.post('/api/staff/job-orders/:id/review', requireStaff, async (req, res) => {
       return res.status(502).json({ error: 'The advert could not be published. The job order is back in the review queue; please try again.' })
     }
   }
+  // Changes requested: the employer gets the reason and a private link to
+  // update and resubmit the job order (no new payment needed).
   let changeLink = null
+  let employerEmailStatus = null
   if (decision.status === 'changes_requested') {
     try { changeLink = await issueChangeLink(req, { ...order, id: req.params.id }, reason) }
     catch { changeLink = { emailStatus: 'failed', error: 'The update link could not be created. Use "Send a new link" to try again.' } }
   } else {
     await revokeChangeLinks(req.params.id)
   }
+  if (decision.status === 'approved') await revokePaymentLinks(req.params.id)
+  if (vacancy) {
+    // Tell the employer their advert is live.
+    const title = String(vacancy.title ?? order.details?.jobTitle ?? 'your job advert')
+    employerEmailStatus = (await sendEmployerEmail({ ...order, id: req.params.id }, `Your job advert is live: ${title}`, {
+      intro: [`Good news: your advert for "${title}" (reference ${orderReference(req.params.id)}) has been approved and is now live on the IMFORCE careers page.`],
+      button: { label: 'View your advert', href: `${publicSiteUrl}/careers#job-${vacancy.id}` },
+      after: ['Our team will be in touch about suitable candidates.'],
+    })).status
+  }
   await audit(req, decision.action, {
     entityType: 'job_order', entityId: req.params.id,
-    detail: { title: vacancy?.title ?? order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, ...(reason ? { reason: reason.slice(0, 300) } : {}), ...(changeLink ? { email: changeLink.emailStatus } : {}) },
+    detail: { title: vacancy?.title ?? order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, ...(reason ? { reason: reason.slice(0, 300) } : {}), ...(changeLink ? { email: changeLink.emailStatus } : {}), ...(employerEmailStatus ? { email: employerEmailStatus } : {}) },
   })
-  res.json({ reviewStatus: review.review_status, vacancy: vacancy ? toVacancy(vacancy) : null, changeLink })
+  res.json({ reviewStatus: review.review_status, vacancy: vacancy ? toVacancy(vacancy) : null, changeLink, employerEmail: employerEmailStatus })
 })
 
 // Staff: send the employer a new link (e.g. the first expired or the email bounced).
@@ -1036,6 +1165,37 @@ app.post('/api/staff/job-orders/:id/change-link', requireStaff, async (req, res)
     await audit(req, 'advert.change_link_resent', { entityType: 'job_order', entityId: req.params.id, detail: { title: order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, email: changeLink.emailStatus } })
     res.json({ changeLink })
   } catch { res.status(502).json({ error: 'A new link could not be created. Please try again.' }) }
+})
+
+// Staff: email the employer a private link to pay for an unpaid job order.
+app.post('/api/staff/job-orders/:id/payment-link', requireStaff, async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Job order not found.' })
+  let order
+  try { ;[order] = await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(req.params.id)}&select=id,details,review_status`) }
+  catch { return res.status(502).json({ error: 'The job order could not be loaded.' }) }
+  if (!order) return res.status(404).json({ error: 'Job order not found.' })
+  if (order.details?.paymentStatus === 'paid') return res.status(409).json({ error: 'This job order is already paid.' })
+  if (order.review_status === 'rejected') return res.status(409).json({ error: 'This job order is closed. Move it back to review first.' })
+  try {
+    await revokePaymentLinks(order.id, 'staff')
+    const { token, link } = await createPaymentLink(order.id, 'staff', { id: req.staffUser.id, name: req.staffProfile.display_name })
+    const url = `${publicSiteUrl}/employers/complete-payment#token=${token}`
+    const title = String(order.details?.jobTitle ?? 'your job order')
+    const expiresAt = new Date(link.expires_at)
+    const { status } = await sendEmployerEmail(order, `Complete the payment for your IMFORCE job order: ${title}`, {
+      intro: [
+        `Your job order for "${title}" (reference ${orderReference(order.id)}) is saved, but the ZAR 499 activation fee has not been paid yet.`,
+        'Our team reviews your advert as soon as the fee is paid, within 1 business day.',
+      ],
+      button: { label: 'Pay ZAR 499 securely', href: url },
+      footnote: `This private link expires on ${formatLongDate(expiresAt)}. Payment is processed securely by Paystack.`,
+    })
+    await supabase(`/rest/v1/job_order_payment_links?id=eq.${encodeURIComponent(link.id)}`, {
+      method: 'PATCH', prefer: 'return=minimal', body: { email_status: status, emailed_at: status === 'sent' ? new Date().toISOString() : null },
+    }).catch(() => {})
+    await audit(req, 'payment.link_sent', { entityType: 'job_order', entityId: order.id, detail: { title, company: order.details?.legalName ?? null, email: status } })
+    res.json({ paymentLink: { emailStatus: status, sentTo: order.details?.email ?? null, expiresAt: link.expires_at, link: status === 'sent' ? null : url } })
+  } catch { res.status(502).json({ error: 'The payment link could not be created. Please try again.' }) }
 })
 
 // Employer: open or submit an update using the private link.
@@ -1103,6 +1263,10 @@ app.post('/api/job-order-changes/submit', async (req, res) => {
   const updatedDetails = { ...order.details }
   for (const field of employerEditableFields) updatedDetails[field] = typeof candidate[field] === 'string' ? candidate[field].trim() : ''
   updatedDetails.authorizedContact = true
+  // What the employer changed, so staff do not have to re-read the whole order.
+  updatedDetails.lastChangedFields = employerEditableFields
+    .filter((field) => String(order.details?.[field] ?? '').trim() !== String(updatedDetails[field] ?? ''))
+    .map((field) => employerFieldLabels[field])
   updatedDetails.resubmittedAt = new Date().toISOString()
   updatedDetails.lastChangeRequest = String(request.reason).slice(0, 1000)
   try {
@@ -1120,7 +1284,7 @@ app.post('/api/job-order-changes/submit', async (req, res) => {
   await audit(req, 'advert.resubmitted', {
     actor: { id: null, email: order.details?.email ?? null }, actorName: `${company} (employer)`,
     entityType: 'job_order', entityId: order.id,
-    detail: { title: updatedDetails.jobTitle ?? null, company },
+    detail: { title: updatedDetails.jobTitle ?? null, company, changedFields: updatedDetails.lastChangedFields },
   })
   res.json({ ok: true, reference: orderReference(order.id) })
 })

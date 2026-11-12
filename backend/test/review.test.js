@@ -49,10 +49,10 @@ test('a job order can only be reviewed once (no double approval by two staff)', 
   assert.equal(state.vacancies.length, before)
 })
 
-test('requesting changes or rejecting requires a reason, which is stored', async () => {
+test('requesting changes requires a reason, which is stored', async () => {
   const order = addOrder()
   assert.equal((await review(order.id, { decision: 'changes' })).status, 400)
-  assert.equal((await review(order.id, { decision: 'reject', reason: 'no' })).status, 400)
+  assert.equal((await review(order.id, { decision: 'changes', reason: 'no' })).status, 400)
   const res = await review(order.id, { decision: 'changes', reason: 'Please add the salary range and working hours.' })
   assert.equal(res.status, 200)
   assert.equal(order.review_status, 'changes_requested')
@@ -61,7 +61,14 @@ test('requesting changes or rejecting requires a reason, which is stored', async
   assert.equal(state.audit.at(-1).detail.reason, 'Please add the salary range and working hours.')
 })
 
-test('a reviewed order can be reopened and reviewed again', async () => {
+test('job orders can never be rejected: staff can only approve or ask for changes', async () => {
+  const order = addOrder()
+  const res = await review(order.id, { decision: 'reject', reason: 'Duplicate order' })
+  assert.equal(res.status, 400)
+  assert.equal(order.review_status, 'pending')
+})
+
+test('an older closed order (from before rejection was removed) can be reopened and reviewed again', async () => {
   const order = addOrder('paid', 'rejected')
   order.review_reason = 'Duplicate order'
   assert.equal((await review(order.id, { decision: 'reopen' })).status, 200)
@@ -92,7 +99,7 @@ test('review endpoint is staff-only and validates ids and decisions', async () =
   assert.equal((await review(order.id, { decision: 'approve', vacancy: advert }, {})).status, 401)
   assert.equal((await review('not-a-uuid', { decision: 'approve' })).status, 404)
   assert.equal((await review(order.id, { decision: 'publish-everything' })).status, 400)
-  assert.equal((await review(crypto.randomUUID(), { decision: 'reject', reason: 'Not found case' })).status, 404)
+  assert.equal((await review(crypto.randomUUID(), { decision: 'changes', reason: 'Not found case' })).status, 404)
 })
 
 test('staff enquiries include each job order’s review status', async () => {

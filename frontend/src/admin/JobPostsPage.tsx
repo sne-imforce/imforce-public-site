@@ -127,8 +127,10 @@ function JobPostForm({ editing, order, missing, onDone, onApproved }: FormProps)
     setSaving(true)
     try {
       if (order) {
-        await reviewJobOrder(order.id, { decision: 'approve', vacancy: payload })
-        await onApproved(`Approved. “${payload.title}” is now live on the careers page.`)
+        const { employerEmail } = await reviewJobOrder(order.id, { decision: 'approve', vacancy: payload })
+        const told = employerEmail === 'sent' ? ' The employer was emailed that it is live.'
+          : ' The employer could not be emailed automatically, so let them know it is live.'
+        await onApproved(`Approved. “${payload.title}” is now live on the careers page.${told}`)
       } else if (editing) {
         await updateRecruiterVacancy(editing.id, payload)
         onDone(`“${payload.title}” was updated.`)

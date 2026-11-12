@@ -18,6 +18,7 @@ import PrivacyPolicy from './pages/public site/PrivacyPolicy'
 import Certifications from './pages/public site/certifications/Certifications'
 import Employers from './pages/public site/hire talent/Employers'
 import UpdateJobOrder from './pages/public site/hire talent/UpdateJobOrder'
+import CompletePayment from './pages/public site/hire talent/CompletePayment'
 
 const routeSeo = {
   '/': {
@@ -148,6 +149,12 @@ const routeSeo = {
     keywords: [],
     noIndex: true,
   },
+  '/employers/complete-payment': {
+    title: 'Complete your payment',
+    description: 'Private page for employers to pay the activation fee for a job order IMFORCE already received.',
+    keywords: [],
+    noIndex: true,
+  },
   '/admin': {
     title: 'Staff sign-in',
     description: 'Authorised IMFORCE staff sign-in.',
@@ -204,6 +211,7 @@ function AppContent() {
         <Route path="/contact" element={<Contact />} />
         <Route path="/employers" element={<Employers />} />
         <Route path="/employers/update-job-order" element={<UpdateJobOrder />} />
+        <Route path="/employers/complete-payment" element={<CompletePayment />} />
         <Route path="/services/placements" element={<Placement />} />
         <Route path="/certifications" element={<Certifications />} />
         <Route

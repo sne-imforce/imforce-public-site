@@ -30,7 +30,7 @@ export function reviewState(order: StaffInquiry): ReviewState {
   const status = order.review_status ?? 'pending'
   if (status === 'approved') return 'approved'
   if (status === 'changes_requested') return 'changes'
-  if (status === 'rejected') return 'rejected'
+  if (status === 'rejected') return 'rejected' // older orders only: rejection was removed
   return paymentState(order.details?.paymentStatus) === 'paid' ? 'awaiting-review' : 'awaiting-payment'
 }
 export const reviewBadge: Record<ReviewState, { text: string; tone: string }> = {
@@ -38,7 +38,7 @@ export const reviewBadge: Record<ReviewState, { text: string; tone: string }> = 
   'awaiting-payment': { text: 'Awaiting payment', tone: 'warning' },
   approved: { text: 'Approved · live', tone: 'success' },
   changes: { text: 'Changes requested', tone: 'warning' },
-  rejected: { text: 'Rejected', tone: 'danger' },
+  rejected: { text: 'Closed (older decision)', tone: 'muted' },
 }
 
 const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
@@ -108,11 +108,16 @@ export function buildNotifications(inquiries: StaffInquiry[], vacancies: Recruit
       items.push({ id: `resubmitted-${order.id}-${details.resubmittedAt}`, kind: 'action', title: `Employer updated their advert: ${role}`, detail: `${company} made the changes you asked for. Review it again. ${reference}`, at: time(details.resubmittedAt), link: reviewLink })
     } else if (state === 'awaiting-review') {
       const paidAt = time(typeof details.paymentPaidAt === 'string' ? details.paymentPaidAt : '') || created
-      items.push({ id: `review-${order.id}`, kind: 'action', title: `Advert awaiting review: ${role}`, detail: `${company} paid the activation fee. Approve the advert before it goes online. ${reference}`, at: paidAt, link: reviewLink })
+      items.push({ id: `review-${order.id}`, kind: 'action', title: `Advert awaiting review: ${role}`, detail: `${company} paid the activation fee. We promised a review within 1 business day. ${reference}`, at: paidAt, link: reviewLink })
     } else if (state === 'changes' && linkExpired && link) {
       items.push({ id: `link-expired-${order.id}-${link.expires_at}`, kind: 'reminder', title: `Update link expired: ${company}`, detail: `${company} did not update the ${role} advert before the link expired. Send a new link or follow up. ${reference}`, at: time(link.expires_at), link: reviewLink })
     } else if (state === 'awaiting-payment' && now - created > 2 * DAY_MS) {
-      items.push({ id: `unpaid-${order.id}`, kind: 'reminder', title: `Follow up payment: ${company}`, detail: `The ${role} job order has been unpaid for ${daysBetween(created, now)} days. ${reference}`, at: created + 2 * DAY_MS, link: reviewLink })
+      // Quiet for 2 days after a payment link was sent, then remind again.
+      const sentAt = order.payment_link && !order.payment_link.revoked_at ? time(order.payment_link.created_at) : 0
+      if (now - sentAt > 2 * DAY_MS) {
+        const followUp = sentAt ? `A payment link was sent ${daysBetween(sentAt, now)} days ago; call them or send a new link.` : 'Send them a payment link from Advert review.'
+        items.push({ id: `unpaid-${order.id}-${sentAt}`, kind: 'reminder', title: `Follow up payment: ${company}`, detail: `The ${role} job order has been unpaid for ${daysBetween(created, now)} days. ${followUp} ${reference}`, at: Math.max(created, sentAt) + 2 * DAY_MS, link: reviewLink })
+      }
     } else if (state === 'changes' && !linkExpired && order.reviewed_at && now - time(order.reviewed_at) > 5 * DAY_MS) {
       items.push({ id: `changes-${order.id}`, kind: 'reminder', title: `No update yet: ${company}`, detail: `Changes to the ${role} advert were requested ${daysBetween(time(order.reviewed_at), now)} days ago. ${reference}`, at: time(order.reviewed_at) + 5 * DAY_MS, link: reviewLink })
     }

@@ -13,10 +13,12 @@ const actionLabels: Record<string, string> = {
   'vacancy.delete': 'Deleted job post',
   'advert.approve': 'Approved advert',
   'advert.request_changes': 'Requested advert changes',
+  // Older entries only: job orders can no longer be rejected.
   'advert.reject': 'Rejected advert',
   'advert.reopen': 'Moved advert back to review',
   'advert.change_link_resent': 'Sent a new update link',
   'advert.resubmitted': 'Employer updated advert',
+  'payment.link_sent': 'Sent a payment link',
   'device.trust': 'Remembered a device',
   'device.forget': 'Forgot remembered device',
 }
@@ -31,6 +33,7 @@ const actionTone: Record<string, string> = {
   'advert.reopen': 'info',
   'advert.change_link_resent': 'warning',
   'advert.resubmitted': 'info',
+  'payment.link_sent': 'warning',
 }
 
 const formatWhen = (value: string) => new Intl.DateTimeFormat('en-ZA', {

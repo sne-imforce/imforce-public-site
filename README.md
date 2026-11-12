@@ -9,7 +9,7 @@ React/TypeScript frontend with an Express API backed by Supabase. See [productio
 
 ## Local development
 
-1. Copy `backend/.env.example` to `backend/.env` and set the Supabase project URL and keys. Keep the service-role key server-side and out of version control. Apply `backend/migrations/001`–`009` to the Supabase project in order. Add staff with `cd backend && npm run staff:create`; they sign in with their username. Staff sign-in requires an authenticator app (TOTP) by default; see the project documentation.
+1. Copy `backend/.env.example` to `backend/.env` and set the Supabase project URL and keys. Keep the service-role key server-side and out of version control. Apply `backend/migrations/001`–`010` to the Supabase project in order. Add staff with `cd backend && npm run staff:create`; they sign in with their username. Staff sign-in requires an authenticator app (TOTP) by default; see the project documentation.
 2. In `backend`, run `npm ci` then `npm run dev`.
 3. In `frontend`, run `npm ci` then `npm run dev`.
 4. Set `VITE_API_BASE_URL` in the frontend environment only when the API is not served from the same origin; it must be the API origin, without a trailing slash.

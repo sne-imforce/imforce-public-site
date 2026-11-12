@@ -25,7 +25,7 @@ $P -c "insert into auth.users(id, email) values
   ('a0000000-0000-4000-8000-000000000004', '_sipho+test@imforce.co.za')
   on conflict do nothing;
   insert into public.staff_profiles(user_id) select id from auth.users where id::text like 'a0000000-%' on conflict do nothing;" >/dev/null 2>&1 || true
-for run in 1 2; do for f in "$DIR"/00*.sql; do $P -f "$f" 2>/dev/null || { echo "FAIL migration $(basename "$f") (run $run)"; exit 1; }; done; echo "PASS migrations applied (run $run)"; done
+for run in 1 2; do for f in "$DIR"/0[0-9][0-9]_*.sql; do $P -f "$f" 2>/dev/null || { echo "FAIL migration $(basename "$f") (run $run)"; exit 1; }; done; echo "PASS migrations applied (run $run)"; done
 $P -c "delete from public.vacancies; insert into public.vacancies (client_name,title,location,region,category,employment_type,summary,closing_date,status) values ('Secret Client','Open role','D','K','A','Permanent','x',null,'published'),('Secret Client','Expired role','D','K','A','Permanent','x',current_date-3,'published'),('Secret Client','Draft role','D','K','A','Permanent','x',null,'draft');"
 ok(){ out=$($P -At -c "$3" 2>&1); if [ $? -eq 0 ] && [ "$out" = "$2" ]; then echo "PASS $1"; else echo "FAIL $1 -> $out"; fails=$((fails+1)); fi; }
 deny(){ out=$($P -At -c "$2" 2>&1); if echo "$out" | grep -qE "$3"; then echo "PASS $1"; else echo "FAIL $1 -> $out"; fails=$((fails+1)); fi; }
@@ -81,4 +81,12 @@ deny "update link needs a real reason" "insert into public.job_order_change_requ
 ok   "service_role can create an update link" "1" "set role service_role; insert into public.job_order_change_requests(order_id, token_hash, reason, expires_at) values ('$ORDER_ID', md5(random()::text) || md5(random()::text), 'Please add the salary range.', now() + interval '7 days') returning 1;"
 deny "service_role cannot delete update-link history" "set role service_role; delete from public.job_order_change_requests;" "permission denied"
 ok   "audit log accepts advert.resubmitted / change_link_resent" "2" "set role service_role; insert into public.staff_audit_log(action) values ('advert.resubmitted'), ('advert.change_link_resent'); select count(*) from (select 1 from public.staff_audit_log where action in ('advert.resubmitted','advert.change_link_resent') order by id desc limit 2) x;"
+deny "anon cannot read payment links" "set role anon; select 1 from public.job_order_payment_links;" "permission denied"
+deny "authenticated cannot read payment links" "set role authenticated; select 1 from public.job_order_payment_links;" "permission denied"
+deny "payment link must store a SHA-256 hash, not a raw token" "insert into public.job_order_payment_links(order_id, token_hash, purpose, expires_at) values ('$ORDER_ID', 'raw-token', 'staff', now() + interval '7 days');" "check constraint"
+deny "payment link cannot last more than 15 days" "insert into public.job_order_payment_links(order_id, token_hash, purpose, expires_at) values ('$ORDER_ID', repeat('d', 64), 'staff', now() + interval '60 days');" "check constraint"
+deny "payment link purpose is checkout or staff only" "insert into public.job_order_payment_links(order_id, token_hash, purpose, expires_at) values ('$ORDER_ID', repeat('e', 64), 'refund', now() + interval '7 days');" "check constraint"
+ok   "service_role can create a payment link" "1" "set role service_role; insert into public.job_order_payment_links(order_id, token_hash, purpose, expires_at) values ('$ORDER_ID', md5(random()::text) || md5(random()::text), 'checkout', now() + interval '7 days') returning 1;"
+deny "service_role cannot delete payment-link history" "set role service_role; delete from public.job_order_payment_links;" "permission denied"
+ok   "audit log accepts payment.link_sent" "1" "set role service_role; insert into public.staff_audit_log(action) values ('payment.link_sent'); select count(*) from (select 1 from public.staff_audit_log where action = 'payment.link_sent' order by id desc limit 1) x;"
 echo; [ $fails -eq 0 ] && echo "All database checks passed." || { echo "$fails database check(s) failed."; exit 1; }

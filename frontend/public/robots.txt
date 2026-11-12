@@ -2,6 +2,7 @@ User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /employers/update-job-order
+Disallow: /employers/complete-payment
 Disallow: /api/
 # Decoy entry: no real page lives here. Requests to it raise a security alert.
 Disallow: /api/internal/backup

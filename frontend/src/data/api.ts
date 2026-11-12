@@ -20,19 +20,31 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     saveStaffToken(null)
     sessionExpiredListeners.forEach((listener) => listener())
   }
-  if (!response.ok) throw new Error(payload.error ?? `Something went wrong (${response.status}). Please try again.`)
+  if (!response.ok) {
+    // status and payload let callers react to specific answers (e.g. "already paid").
+    throw Object.assign(new Error(payload.error ?? `Something went wrong (${response.status}). Please try again.`), { status: response.status, payload })
+  }
   return payload as T
 }
 
 export const getVacancies = () => request<{ vacancies: Vacancy[] }>('/vacancies')
 export const submitContact = (data: Record<string, string>) =>
   request<{ ok: true; reference?: string | null }>('/contact', { method: 'POST', body: JSON.stringify(data) })
+export type ApiError = Error & { status?: number; payload?: { resumeToken?: string; alreadyPaid?: boolean } }
 export const initializePaystackCheckout = (details: Record<string, unknown>) =>
-  request<{ authorizationUrl: string; reference: string }>('/payments/paystack/initialize', {
+  request<{ authorizationUrl: string; reference: string; resumeToken?: string | null }>('/payments/paystack/initialize', {
     method: 'POST', body: JSON.stringify({ details }),
   })
+/** Pay for an existing job order (retry from this tab, or a link IMFORCE emailed). Never creates a new order. */
+export const resumePaystackCheckout = (token: string, details?: Record<string, unknown>) =>
+  request<{ authorizationUrl: string; reference: string }>('/payments/paystack/resume', {
+    method: 'POST', body: JSON.stringify(details ? { token, details } : { token }),
+  })
+export type PaymentLinkSummary = { reference: string; jobTitle: string; company: string; amount: string; paid: boolean; closed: boolean; expiresAt: string }
+export const openPaymentLink = (token: string) =>
+  request<PaymentLinkSummary>('/payments/link/open', { method: 'POST', body: JSON.stringify({ token }) })
 export const verifyPaystackPayment = (reference: string) =>
-  request<{ paid: true; message: string }>('/payments/paystack/verify', {
+  request<{ paid: true; reference: string; message: string }>('/payments/paystack/verify', {
     method: 'POST', body: JSON.stringify({ reference }),
   })
 export type StaffSession = { accessToken: string; email: string; displayName?: string | null; username?: string | null; deviceRemembered?: boolean; expiresIn?: number }
@@ -93,7 +105,7 @@ export type StaffInquiry = {
   enquiry_type?: string
   subject?: string
   message?: string
-  details?: Record<string, string | boolean>
+  details?: Record<string, string | boolean | string[]>
   // Job orders only (migration 008)
   review_status?: 'pending' | 'approved' | 'changes_requested' | 'rejected'
   reviewed_by_name?: string | null
@@ -109,6 +121,15 @@ export type StaffInquiry = {
     email_status: 'sent' | 'failed' | 'not_configured' | 'not_sent'
     emailed_at: string | null
     responded_at: string | null
+    revoked_at: string | null
+  } | null
+  /** Latest payment link a staff member emailed for an unpaid order (migration 010). */
+  payment_link?: {
+    created_by_name: string | null
+    created_at: string
+    expires_at: string
+    email_status: 'sent' | 'failed' | 'not_configured' | 'not_sent'
+    emailed_at: string | null
     revoked_at: string | null
   } | null
 }
@@ -136,9 +157,13 @@ export async function submitJobOrderChanges(token: string, details: Record<strin
   if (!response.ok) throw Object.assign(new Error(payload.error ?? 'Your changes could not be saved.'), { issues: (payload.errors ?? []) as FieldIssue[], status: response.status })
   return payload as { ok: true; reference: string }
 }
-export type ReviewDecision = 'approve' | 'changes' | 'reject' | 'reopen'
+/** Staff: email the employer a private link to pay for an unpaid job order. */
+export const sendPaymentLink = (id: string) =>
+  request<{ paymentLink: ChangeLinkResult }>(`/staff/job-orders/${encodeURIComponent(id)}/payment-link`, { method: 'POST', headers: staffHeaders(), body: '{}' })
+// Job orders are never rejected: staff approve them or ask the employer for changes.
+export type ReviewDecision = 'approve' | 'changes' | 'reopen'
 export const reviewJobOrder = (id: string, body: { decision: ReviewDecision; reason?: string; vacancy?: Partial<Vacancy> }) =>
-  request<{ reviewStatus: string; vacancy: Vacancy | null; changeLink: ChangeLinkResult | null }>(`/staff/job-orders/${encodeURIComponent(id)}/review`, {
+  request<{ reviewStatus: string; vacancy: Vacancy | null; changeLink: ChangeLinkResult | null; employerEmail?: 'sent' | 'failed' | 'not_configured' | null }>(`/staff/job-orders/${encodeURIComponent(id)}/review`, {
     method: 'POST', headers: staffHeaders(), body: JSON.stringify(body),
   })
 export type StaffAuditEntry = {

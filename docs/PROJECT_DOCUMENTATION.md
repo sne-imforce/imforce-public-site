@@ -157,18 +157,35 @@ sequenceDiagram
   E->>A: POST /api/payments/paystack/initialize {details}
   A->>A: validate (whitelisted fields only, limits)
   A->>D: insert employer_inquiries (status initializing, ref IMF-uuid)
+  A->>D: insert job_order_payment_links (checkout link, hash only)
   A->>P: transaction/initialize (amount 49900 ZAR, ref, callback)
   P-->>A: authorization_url (must be https://checkout.paystack.com)
   A->>D: status pending
-  A-->>E: authorizationUrl
+  A-->>E: authorizationUrl + resumeToken (kept in this tab's sessionStorage)
+  Note over E,A: Retry from the same tab: POST /payments/paystack/resume {token, details}<br/>same order, new IMF- reference, earlier references kept
   E->>P: pays on hosted checkout
   P-->>E: redirect to /employers?reference=...
   E->>A: POST /api/payments/paystack/verify {reference}
   A->>P: transaction/verify/{reference}
-  A->>D: status paid (only if amount/currency/email match)
+  A->>D: status paid (only if amount/currency/email match; atomic: only one caller wins)
+  A-->>E: email "We received your job order" (ORD- reference, review within 1 business day)
   P->>A: webhook charge.success (HMAC-SHA512 signed)
-  A->>A: verify signature, then same confirm logic (idempotent)
+  A->>A: verify signature, then same confirm logic (idempotent, no second email)
 ```
+
+A payment on an **older** reference of the same order (for example an old Paystack tab paid later) is still matched through `details.paymentReferences`. Starting a new checkout never overwrites an order that is already paid.
+
+### Employer journey and emails
+
+| Moment | What the employer sees | Email |
+|---|---|---|
+| Paystack returns to `/employers` | A confirmation panel that stays on screen: `ORD-` reference, "within 1 business day", what happens next | **We received your job order** (once, even if the webhook and the return page both confirm) |
+| Checkout failed or the tab was closed | "Checkout" again pays for the **same** order (with any corrections); no duplicate order | None |
+| Unpaid order, staff follow up | `/employers/complete-payment#token=…`: order summary and **Pay ZAR 499 securely** | **Complete the payment…** (from Advert review → *Send payment link*) |
+| Staff request changes | `/employers/update-job-order#token=…` | **Changes needed…** with the staff message and a private link; no extra payment |
+| Advert approved | | **Your job advert is live**, with a link to it on the careers page |
+
+**Job orders are never rejected.** Staff either approve the advert or ask the employer for changes, and the employer can always fix and resubmit. There are no refunds. Orders closed under the older "reject" option still show as *Closed (older decision)* and can be moved back to review.
 
 ---
 
@@ -188,7 +205,7 @@ sequenceDiagram
 ├── backend/
 │   ├── server.js                   Express API (routes, validation, Paystack, staff auth)
 │   ├── security.js                 Intrusion detection: honeypots, scoring, blocking, alerts
-│   ├── migrations/                 Supabase SQL (run in order 001 → 009)
+│   ├── migrations/                 Supabase SQL (run in order 001 → 010)
 │   ├── test/                       node:test security regression suite (mocks all services)
 │   └── .env.example                Configuration template (no secrets)
 └── frontend/
@@ -221,7 +238,8 @@ sequenceDiagram
 | `/` | Home | Hero with role and location search → `/careers` |
 | `/about` | About | Industries dropdown links to `/careers?industry=…` |
 | `/careers` | Careers | Filters saved in `localStorage` (validated on load); vacancy detail; Apply → HTTPS Nexora link only |
-| `/employers` | For Employers | Job-order form with draft autosave (`sessionStorage`), review dialog, Paystack checkout in a new tab |
+| `/employers` | For Employers | Job-order form with draft autosave (`sessionStorage`), review dialog, Paystack checkout in a new tab. Retrying checkout pays for the same order. After payment, a confirmation panel stays on screen with the `ORD-` reference and next steps. |
+| `/employers/complete-payment#token=…` | Private page from the "Complete the payment" email. Token read from after `#` and removed from the address bar; shows the order summary and a **Pay ZAR 499 securely** button (Paystack). Paid orders say there is nothing more to pay. `noindex`, `no-store`, `no-referrer`. | Employers with the link |
 | `/employers/update-job-order#token=…` | Private page from the "Request changes" email. The token is read from after `#` and removed from the address bar immediately. Shows what IMFORCE asked to change and the job order pre-filled; the contact email and payment data cannot be changed; resubmitting sends the order back for review. `noindex`, `no-store`, `no-referrer`. | Employers with the link |
 | `/services/placements` | Permanent staffing | |
 | `/certifications` (`/credentials` redirects) | Certifications & credentials | |
@@ -230,9 +248,9 @@ sequenceDiagram
 | `/privacy` | Privacy notice (POPIA) | Linked from the footer and both forms |
 | `/admin` | Staff sign-in (password + authenticator code); once signed in it redirects to `/admin/inventory` (keeping any `?…`) | `noindex` |
 | `/admin/inventory` | **Inventory**: summary tiles, Job posts table, Enquiries table | `noindex` (all `/admin/*`); idle sign-out after 15 minutes |
-| `/admin/review` | **Advert review**: employer job orders with payment and review status, queue opens on *Awaiting review*. Approve & publish opens the job post form pre-filled from the order (`/admin/jobs?order=<id>`); request changes or reject require a reason; reviewed orders can be moved back to review. Unpaid orders cannot be approved. | Staff only; tab badge = adverts awaiting review |
+| `/admin/review` | **Advert review**: employer job orders with payment and review status, queue opens on *Awaiting review*. Approve & publish opens the job post form pre-filled from the order (`/admin/jobs?order=<id>`) and emails the employer that the advert is live. **Request changes** needs a message to the employer, which is emailed with a private update link. There is no reject option. Resubmitted orders show **Changed:** with the fields the employer edited. Unpaid orders cannot be approved; staff can **Send payment link** (and see when it was sent). | Staff only; tab badge = adverts awaiting review |
 | `/admin/jobs` | **Job posts** subscreen: new post, or edit with `?edit=<id>`; live preview | Staff only |
-| `/admin/notifications` | **Notifications**: adverts awaiting review, urgent hires, enquiries from the last 14 days, and reminders (vacancies closing within 3 days or closed in the last 7, job orders unpaid after 2 days, requested changes with no update after 5 days). Filter chips, 10 per page, *New* since the last visit (remembered per staff member in the browser), links straight to the item. | Staff only; tab badge = new items |
+| `/admin/notifications` | **Notifications**: adverts awaiting review, urgent hires, enquiries from the last 14 days, and reminders (vacancies closing within 3 days or closed in the last 7, job orders unpaid after 2 days (quiet for 2 days after a payment link is sent), requested changes with no update after 5 days). Filter chips, 10 per page, *New* since the last visit (remembered per staff member in the browser), links straight to the item. | Staff only; tab badge = new items |
 | `/admin/audit` | **Audit log** subscreen | Staff only |
 | `*` | Falls back to Home | |
 
@@ -270,8 +288,10 @@ Base path `/api`. All bodies are JSON (`Content-Type: application/json` is requi
 | `GET /api/health` | Liveness probe | 120 | 200 `{status:"ok"}` |
 | `GET /api/vacancies` | Published, unexpired vacancies. **Client names are never included.** | 120 | 200 `{vacancies:[…]}`, 502 |
 | `POST /api/contact` | Contact enquiry; returns `{ok, reference}` (short `ENQ-…` reference for the visitor). Body: `name`(≤120), `email`(≤254), `phone`(≤40, optional), `enquiryType` (one of *Hiring and permanent staffing*, *Job opportunities*, *Other enquiry*), `subject`(≤160), `message`(≤5000) | 6 | 201, 400, 502 |
-| `POST /api/payments/paystack/initialize` | Body `{details:{…job order…}}`. Only whitelisted fields are accepted. | 6 | 201 `{authorizationUrl, reference}`, 400 `{error, errors:[{field,message}]}`, 502, 503 |
-| `POST /api/payments/paystack/verify` | Body `{reference:"IMF-<uuid>"}` | 6 | 200 paid, 400, 402 not paid, 404, 502 |
+| `POST /api/payments/paystack/initialize` | Body `{details:{…job order…}}`. Only whitelisted fields are accepted. Returns a `resumeToken` (also on 502) so the same tab can retry without creating a duplicate order. | 6 | 201 `{authorizationUrl, reference, resumeToken}`, 400 `{error, errors:[{field,message}]}`, 502, 503 |
+| `POST /api/payments/paystack/resume` | Body `{token, details?}`. Starts a new checkout for the **existing** order. `details` (re-validated) only with the tab's own checkout token; staff-sent links can only pay. | 6 | 200 `{authorizationUrl, reference}`, 400, 404 invalid/expired, 409 already paid, 502 |
+| `POST /api/payments/link/open` | Body `{token}` → order summary for the payment page (reference, job title, company, amount, paid, expiry). No personal details. | 6 | 200, 404 |
+| `POST /api/payments/paystack/verify` | Body `{reference:"IMF-<uuid>"}`. Also matches older references of the same order. | 6 | 200 `{paid, reference: "ORD-…", message}`, 400, 402 not paid, 404, 502 |
 | `POST /api/payments/paystack/webhook` | Paystack only; HMAC-SHA512 signature required | 120 | 200, 401, 503 |
 
 ### Staff endpoints (header `Authorization: Bearer <access token>`)
@@ -284,7 +304,8 @@ Every staff response is sent with `Cache-Control: no-store`.
 | `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code, rememberDevice?}` (6 digits). With `rememberDevice: true` it sets an HttpOnly, `SameSite=Strict` cookie (`Path=/api/staff`, 30 days) so that browser needs only the password next time → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
 | `POST /api/staff/devices/forget` | Stop remembering this browser (`{}`) or every browser for the account (`{"scope":"all"}`) | 60 |
-| `POST /api/staff/job-orders/:id/review` | `{decision: 'approve'\|'changes'\|'reject'\|'reopen', reason?, vacancy?}`. Approve needs a paid order and a valid job post (published in the same step); changes/reject need a 5–1,000 character reason. Records the reviewer, time and reason; guarded against two staff reviewing at once; a failed publish returns the order to the queue. | 60 |
+| `POST /api/staff/job-orders/:id/review` | `{decision: 'approve'\|'changes'\|'reopen', reason?, vacancy?}`. There is no reject decision (400). Approve needs a paid order and a valid job post (published in the same step) and emails the employer (`employerEmail` status in the response); changes need a 5–1,000 character message, which is emailed to the employer with an update link. Records the reviewer, time and reason; guarded against two staff reviewing at once; a failed publish returns the order to the queue. | 60 |
+| `POST /api/staff/job-orders/:id/payment-link` | Unpaid orders only (409 if paid or closed). Emails the employer a private 7-day payment link and cancels the previous staff link; if email is not set up the response includes the link to copy. Audited as `payment.link_sent`. | 60 |
 | `POST /api/staff/job-orders/:id/change-link` | Sends the employer a new update link (cancels the previous one). Only while changes are requested. | 60 |
 | `POST /api/job-order-changes/open` | Public. `{token}` → reason, expiry and the editable job order (no payment data). Invalid, expired or used links: 404 (and a low-severity security event). | 6 / IP / min |
 | `POST /api/job-order-changes/submit` | Public. `{token, details}`: same validation as the original job order; email and payment fields cannot be changed. Uses the link once; the order returns to *Awaiting review*. | 6 / IP / min |
@@ -314,7 +335,8 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `006_staff_usernames.sql` | `staff_profiles.username` (unique, lowercase, 3–32 characters) and `display_name` (the agent's name shown in the workspace); existing staff are given usernames and names from their email automatically; `staff_audit_log.actor_name` |
 | `007_staff_trusted_devices.sql` | `staff_trusted_devices` for \"Remember this device for 30 days\": stores only the SHA-256 hash of the device token, has a 31-day maximum, can be revoked but not deleted, and RLS hides it; adds the `device.trust` and `device.forget` audit actions |
 | `008_advert_review.sql` | Advert review on `employer_inquiries`: `review_status` (pending, approved, changes_requested, rejected), reviewer, time, reason (required to reject or request changes) and the published `vacancy_id`; review actions added to the audit log |
-| `009_job_order_change_requests.sql` | `job_order_change_requests`: one row per \"Request changes\" link (SHA-256 token hash, reason, who asked, expiry of at most 15 days, email status, used or revoked time); RLS hides it; history is kept. Adds `advert.change_link_resent` and `advert.resubmitted` audit actions. Audit action lists in 007–009 are `NOT VALID`, so re-running an older migration never fails on newer log entries. |
+| `009_job_order_change_requests.sql` | `job_order_change_requests`: one row per \"Request changes\" link (SHA-256 token hash, reason, who asked, expiry of at most 15 days, email status, used or revoked time); RLS hides it; history is kept. Adds `advert.change_link_resent` and `advert.resubmitted` audit actions. Audit action lists in 007–010 are `NOT VALID`, so re-running an older migration never fails on newer log entries. |
+| `010_job_order_payment_links.sql` | `job_order_payment_links` (see Tables): pay for an existing order instead of creating a duplicate. RLS on; no `anon`/`authenticated` access; `service_role` cannot delete. Adds the `payment.link_sent` audit action. |
 
 ### Tables
 
@@ -327,6 +349,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `security_events` | Intrusion-detection audit trail | None |
 | `staff_trusted_devices` | Remembered browsers for two-step sign-in (token hash, device label, expiry, revoked flag) | None |
 | `job_order_change_requests` | Private update links sent to employers (hash only) and whether they were emailed, used, expired or replaced | None |
+| `job_order_payment_links` | Private payment links (hash only): `checkout` (the employer's own tab) or `staff` (emailed by staff), who sent it, expiry, email status, revoked time | None |
 | `staff_audit_log` | Who did what: sign-in and sign-out, viewing enquiries, vacancy create, update (changed fields) and delete (snapshot) | None. Append-only. |
 
 The API uses the **service-role key** for writes and staff reads, and the **anon key** for the public vacancy listing. Both keys stay on the server.
@@ -377,7 +400,7 @@ These are requests that no real visitor ever makes. Each one adds **100 points**
 | Staff account locked (5 failed sign-ins) | high | 50 |
 | Attack signature in URL or body (XSS, SQL injection, path traversal, template/JNDI injection, NoSQL operators) | medium | 25 |
 | Malformed staff token, non-UUID record id, bot trap field filled, login rate limit exceeded, sign-in to a locked account | medium | 25 |
-| Failed sign-in, invalid or expired staff token, unknown payment reference, other rate limit exceeded | low | 10 |
+| Failed sign-in, invalid or expired staff token, unknown payment reference, invalid update or payment link, other rate limit exceeded | low | 10 |
 
 **100 points → the IP is blocked for 30 minutes** (HTTP 403 with a polite message for every API call).
 
@@ -435,7 +458,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 
 ## 13. Local development
 
-Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–009 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
+Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–010 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
 
 ```bash
 cd backend && cp .env.example .env   # then fill in the values
@@ -464,10 +487,10 @@ On their first sign-in, the staff member is shown a QR code to scan with an auth
 
 | Suite | Command | What it proves |
 |---|---|---|
-| Backend security regression (43 tests) | `cd backend && npm test` | Two-factor sign-in (enrol, verify, wrong code, lockout, AAL1 refused), audit logging, validation, ReDoS fix, CORS, 413/415, auth and enumeration, account lockout, logout revocation, UUID checks, payment amount/currency/email verification, webhook signatures, mass-assignment protection, rate limits, honeypots, attack detection and blocking, alert throttling, log-injection sanitising, safety valves. Supabase, Paystack and the alert webhook are mocked, so it runs offline. |
+| Backend security regression (89 tests) | `cd backend && npm test` | Two-factor sign-in (enrol, verify, wrong code, lockout, AAL1 refused), audit logging, validation, ReDoS fix, CORS, 413/415, auth and enumeration, account lockout, logout revocation, UUID checks, payment amount/currency/email verification, webhook signatures, payment resume without duplicates, late payments on older references, one confirmation email, staff payment links, approval and change emails, no reject decision, mass-assignment protection, rate limits, honeypots, attack detection and blocking, alert throttling, log-injection sanitising, safety valves. Supabase, Paystack and the alert webhook are mocked, so it runs offline. |
 | Frontend lint and type-check | `cd frontend && npm run lint && npm run build` | Static correctness |
-| Database permissions (29 checks) | `qa/db-permissions.sh` on a scratch Postgres (see QA report §5) | anon cannot read `client_name`, enquiries, security events or the audit log; audit log cannot be edited or deleted, even by the owner; constraints; idempotency |
-| Browser end-to-end (73 + 37 checks) | `node qa/e2e-smoke.cjs` and `node qa/e2e-admin.cjs` (see QA report §5) | All routes on desktop and mobile: no CSP violations, no JS errors, no horizontal overflow; contact flow; staff login, two-step sign-in, logout, expiry; stored-XSS rendering |
+| Database permissions (63 checks) | `qa/db-permissions.sh` on a scratch Postgres (see QA report §5) | anon cannot read `client_name`, enquiries, security events or the audit log; audit log cannot be edited or deleted, even by the owner; constraints (including update and payment links: hash only, expiry, purpose); migrations 001–010 re-run twice |
+| Browser end-to-end (220 checks) | `node qa/e2e-smoke.cjs`, `e2e-admin.cjs`, `e2e-review.cjs`, `e2e-changes.cjs`, `e2e-loading.cjs` (see QA report §5) | All routes on desktop and mobile: no CSP violations, no JS errors, no horizontal overflow; contact flow; staff login, two-step sign-in, logout, expiry; stored-XSS rendering; advert review; employer update and payment pages; payment confirmation; checkout retry without duplicates |
 | Accessibility | axe-core in Playwright (see QA report §5) | WCAG 2.1 AA and best practices on every public page and every signed-in admin screen, desktop and mobile: 0 violations |
 
 Recommended next step: commit the Playwright E2E script as a proper `@playwright/test` suite and run it in CI.
@@ -496,7 +519,7 @@ The hosting choice is still open (the scope compares xneelo, Hostinger and other
 1. **Frontend**: static hosting of `frontend/dist` with SPA fallback (all paths → `index.html`), HTTPS, and the headers in `public/_headers`.
 2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`. Start it with `npm start`. It shuts down gracefully on SIGTERM and writes JSON access, security and error logs to stdout for the host to collect.
 3. **Routing**: either the same origin (`/api/*` reverse-proxied to the API) or a separate API origin set in `VITE_API_BASE_URL`.
-4. **Supabase**: run migrations 001 → 009, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
+4. **Supabase**: run migrations 001 → 010, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
 5. **Paystack**: webhook `https://<api-host>/api/payments/paystack/webhook`; test mode end to end before switching to live keys.
 6. **Alerts**: create a Slack or Teams incoming webhook in a monitored channel and set `SECURITY_ALERT_WEBHOOK_URL`.
 
@@ -561,11 +584,20 @@ Then reset their password. Staff can also do this themselves: **Forget this devi
 
 ### 17.7b Advert changes: how the employer is asked and how they respond
 
-1. In **Advert review**, staff choose **Request changes** and write what needs to change.
+Job orders are never rejected: if an advert cannot be published as it is, ask for changes.
+
+1. In **Advert review**, staff choose **Request changes** and write a message **to the employer** (it is emailed to them word for word).
 2. The employer is emailed a private link that works **once** and expires after **7 days**. If email isn't set up or fails, staff see a **Copy link** box and send it themselves. Only send it to the employer's contact email: anyone with the link can edit that job order.
 3. The employer opens the link, sees the request and their job order pre-filled, makes the changes and resubmits. They can't change the contact email or anything about payment.
-4. The order returns to **Awaiting review**, marked **Updated by employer**, and appears under Notifications.
-5. If the link expires or the email bounced, use **Send a new link**; the old link stops working. Approving, rejecting or moving the order back to review also cancels any outstanding link.
+4. The order returns to **Awaiting review**, marked **Updated by employer**, with **Changed:** listing the fields they edited, and appears under Notifications.
+5. If the link expires or the email bounced, use **Send a new link**; the old link stops working. Approving or moving the order back to review also cancels any outstanding link.
+
+### 17.7c An employer has not paid
+
+1. In **Advert review**, filter on *Awaiting payment*, open the order and choose **Send payment link**. The employer is emailed a private link (7 days) to pay ZAR 499 for **that** order; nothing new is created.
+2. The panel shows when and by whom the link was sent. Sending a new one cancels the previous staff link.
+3. Notifications remind you again 2 days after a link was sent if the order is still unpaid.
+4. Refunds are not offered. If an employer paid twice by mistake (for example two separate orders), handle it with Finance in the Paystack dashboard.
 
 To turn on email, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` and `EMAIL_REPLY_TO` (see §12) and restart the API. For a Microsoft 365 or Google Workspace mailbox, use its SMTP settings with an app password.
 

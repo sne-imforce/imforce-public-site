@@ -1032,6 +1032,10 @@
   margin-top: 6px;
 }
 
+.review-panel__changed {
+  margin: 8px 0 0;
+}
+
 .review-panel__link {
   display: flex;
   align-items: flex-start;

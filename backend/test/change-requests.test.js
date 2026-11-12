@@ -123,7 +123,7 @@ test('expired, malformed and guessed links are refused (and noticed by the alarm
   assert.ok(state.events.some((event) => event.event_type === 'invalid-change-link'))
 })
 
-test('sending a new link cancels the old one; approving or rejecting cancels any link', async () => {
+test('sending a new link cancels the old one; reopening cancels any link', async () => {
   const order = addPaidOrder()
   await requestChanges(order)
   const first = tokenFromEmail()

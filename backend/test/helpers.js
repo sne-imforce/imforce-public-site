@@ -49,6 +49,7 @@ const state = {
   factors: [],
   devices: [],
   changeRequests: [],
+  paymentLinks: [],
 }
 
 function json(body, status = 200) {
@@ -124,6 +125,18 @@ globalThis.fetch = async (input, init = {}) => {
       const pick = (row) => (columns ? Object.fromEntries(columns.map((column) => [column, row[column]])) : row)
       return json([...rows].sort((a, b) => b.requested_at.localeCompare(a.requested_at)).map(pick))
     }
+    if (url.pathname === '/rest/v1/job_order_payment_links') {
+      const value = (name) => url.searchParams.get(name)
+      const matches = (row) => ['id', 'order_id', 'token_hash', 'purpose'].every((name) => !value(name) || row[name] === value(name).slice(3))
+        && (value('revoked_at') !== 'is.null' || !row.revoked_at)
+        && (!value('expires_at') || row.expires_at > value('expires_at').slice(3))
+      if (method === 'POST') { const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), email_status: 'not_sent', emailed_at: null, revoked_at: null, ...body }; state.paymentLinks.push(row); return json([row], 201) }
+      const rows = state.paymentLinks.filter(matches)
+      if (method === 'PATCH') { rows.forEach((row) => Object.assign(row, body)); return json(rows) }
+      const columns = value('select')?.split(',')
+      const pick = (row) => (columns ? Object.fromEntries(columns.map((column) => [column, row[column]])) : row)
+      return json([...rows].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(pick))
+    }
     if (url.pathname === '/rest/v1/staff_trusted_devices') {
       const eq = (name) => url.searchParams.get(name)?.replace(/^eq\./, '')
       const matches = (row) => (!eq('id') || row.id === eq('id'))
@@ -147,7 +160,9 @@ globalThis.fetch = async (input, init = {}) => {
       if (method === 'POST') { const row = { id: crypto.randomUUID(), details: body.details, review_status: 'pending', created_at: new Date().toISOString() }; state.employers.push(row); return json([row], 201) }
       const byId = url.searchParams.get('id')?.slice(3)
       const byStatus = url.searchParams.get('review_status')?.slice(3)
-      const selected = state.employers.filter((row) => (!byId || row.id === byId) && (!byStatus || row.review_status === byStatus))
+      // details->>paymentStatus=neq.paid: the atomic "not paid yet" guard.
+      const notPaid = url.searchParams.get('details->>paymentStatus') === 'neq.paid'
+      const selected = state.employers.filter((row) => (!byId || row.id === byId) && (!byStatus || row.review_status === byStatus) && (!notPaid || row.details?.paymentStatus !== 'paid'))
       if (method === 'PATCH') {
         if (state.failNextOrderPatch) { state.failNextOrderPatch = false; return json({ message: 'boom' }, 500) }
         selected.forEach((row) => Object.assign(row, body))
@@ -155,6 +170,11 @@ globalThis.fetch = async (input, init = {}) => {
       }
       const ref = url.searchParams.get('details->>paymentReference')
       if (ref) return json(state.employers.filter((row) => `eq.${row.details.paymentReference}` === ref))
+      const contains = url.searchParams.get('details->paymentReferences')
+      if (contains) {
+        const [wanted] = JSON.parse(contains.slice(3))
+        return json(state.employers.filter((row) => Array.isArray(row.details.paymentReferences) && row.details.paymentReferences.includes(wanted)))
+      }
       return json(selected)
     }
     if (url.pathname === '/rest/v1/vacancies') {
