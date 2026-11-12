@@ -18,6 +18,8 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? configuredOrigins
   : [...new Set([...configuredOrigins, 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'])]
 const securityAlertWebhookUrl = process.env.SECURITY_ALERT_WEBHOOK_URL || ''
+// Staff two-factor sign-in (TOTP via Supabase Auth MFA). On unless explicitly disabled.
+const staffMfaRequired = process.env.STAFF_MFA_REQUIRED !== 'false'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const todayInSouthAfrica = () => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
@@ -45,6 +47,7 @@ if (process.env.NODE_ENV === 'production') {
   try {
     if (new URL(supabaseUrl).protocol !== 'https:') throw new Error()
   } catch { throw new Error('Production SUPABASE_URL must be a valid HTTPS URL.') }
+  if (!staffMfaRequired) console.warn('WARNING: STAFF_MFA_REQUIRED=false. Staff can sign in with a password only.')
   if (securityAlertWebhookUrl) {
     try { if (new URL(securityAlertWebhookUrl).protocol !== 'https:') throw new Error() }
     catch { throw new Error('SECURITY_ALERT_WEBHOOK_URL must be an HTTPS URL.') }
@@ -108,7 +111,7 @@ const rateSweep = setInterval(() => {
 rateSweep.unref()
 app.use('/api', (req, res, next) => {
   const now = Date.now()
-  const group = req.path === '/staff/login' ? 'login'
+  const group = req.path === '/staff/login' || req.path === '/staff/mfa/verify' ? 'login'
     : req.path === '/payments/paystack/webhook' ? 'webhook'
     : req.path.startsWith('/staff/') ? 'staff'
       : req.method !== 'GET' && req.path !== '/health' ? 'publicWrite' : 'api'
@@ -221,6 +224,13 @@ function fromVacancy(body) {
   }
 }
 
+// Reads claims from a token Supabase has already validated (via /auth/v1/user).
+// Never use this on its own to trust a token: it does not check the signature.
+function tokenClaims(token) {
+  try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) || {} }
+  catch { return {} }
+}
+
 async function requireStaff(req, res, next) {
   if (!requireConfig(res)) return
   try {
@@ -235,6 +245,10 @@ async function requireStaff(req, res, next) {
     if (!profiles.length) {
       security.record(req, 'non-staff-token', 'high', 'Valid account without an active staff profile called a staff route')
       return res.status(403).json({ error: 'This account is not authorized for staff access.' })
+    }
+    if (staffMfaRequired && tokenClaims(token).aal !== 'aal2') {
+      security.record(req, 'staff-token-without-mfa', 'medium', 'Staff route called with a session that has not completed two-factor sign-in')
+      return res.status(401).json({ error: 'Two-factor sign-in is required. Sign in again.' })
     }
     req.staffUser = user
     req.staffToken = token
@@ -596,10 +610,63 @@ app.post('/api/staff/login', async (req, res) => {
       recordLoginFailure(req, normalizedEmail)
       return res.status(401).json({ error: loginFailureMessage })
     }
+    if (staffMfaRequired) {
+      // Password is correct; the session is only AAL1 and is refused by every
+      // staff route until the authenticator code is verified below.
+      const ticket = session.access_token
+      const verified = (session.user.factors ?? []).find((factor) => factor.factor_type === 'totp' && factor.status === 'verified')
+      if (verified) return res.json({ mfa: { step: 'verify', ticket, factorId: verified.id } })
+      for (const stale of (session.user.factors ?? []).filter((factor) => factor.status !== 'verified')) {
+        try { await supabase(`/auth/v1/factors/${encodeURIComponent(stale.id)}`, { key: anonKey, token: ticket, method: 'DELETE' }) } catch { /* best effort */ }
+      }
+      const enrolled = await supabase('/auth/v1/factors', {
+        key: anonKey, token: ticket, method: 'POST',
+        body: { factor_type: 'totp', friendly_name: `IMFORCE staff ${new Date().toISOString().slice(0, 10)} ${crypto.randomUUID().slice(0, 8)}`, issuer: 'IMFORCE' },
+      })
+      const qrCode = typeof enrolled?.totp?.qr_code === 'string' && enrolled.totp.qr_code.startsWith('data:image/svg+xml') ? enrolled.totp.qr_code : null
+      return res.json({ mfa: { step: 'enroll', ticket, factorId: enrolled.id, qrCode, secret: enrolled?.totp?.secret ?? null } })
+    }
     loginFailures.delete(normalizedEmail)
     await audit(req, 'staff.login', { actor: session.user })
     res.json({ accessToken: session.access_token, email: session.user.email, expiresIn: Number(session.expires_in) || 3600 })
   } catch { res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' }) }
+})
+
+// Second step of staff sign-in: check the 6-digit authenticator code.
+app.post('/api/staff/mfa/verify', async (req, res) => {
+  if (!requireConfig(res)) return
+  const { ticket, factorId, code } = req.body || {}
+  if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(ticket)
+    || typeof factorId !== 'string' || !uuidPattern.test(factorId)
+    || typeof code !== 'string' || !/^\d{6}$/.test(code.trim())) {
+    return res.status(400).json({ error: 'Enter the 6-digit code from your authenticator app.' })
+  }
+  let user
+  try { user = await supabase('/auth/v1/user', { key: anonKey, token: ticket }) } catch {
+    security.record(req, 'invalid-mfa-ticket', 'medium', 'Two-factor step called with an invalid or expired sign-in ticket')
+    return res.status(401).json({ error: 'Your sign-in has expired. Start again with your email and password.' })
+  }
+  const email = String(user.email ?? '').toLowerCase()
+  if (accountLocked(email)) {
+    security.record(req, 'locked-account-attempt', 'medium', 'Two-factor code tried on a locked staff account')
+    return res.status(401).json({ error: loginFailureMessage })
+  }
+  if (!(user.factors ?? []).some((factor) => factor.id === factorId)) {
+    security.record(req, 'mfa-factor-mismatch', 'high', 'Two-factor step used a factor that does not belong to the account')
+    return res.status(401).json({ error: 'Your sign-in has expired. Start again with your email and password.' })
+  }
+  let session
+  try {
+    const challenge = await supabase(`/auth/v1/factors/${encodeURIComponent(factorId)}/challenge`, { key: anonKey, token: ticket, method: 'POST', body: {} })
+    session = await supabase(`/auth/v1/factors/${encodeURIComponent(factorId)}/verify`, { key: anonKey, token: ticket, method: 'POST', body: { challenge_id: challenge.id, code: code.trim() } })
+  } catch (error) {
+    if (error.status >= 500 || error.status === 429 || error.name === 'TimeoutError') return res.status(503).json({ error: 'Sign-in is temporarily unavailable. Try again shortly.' })
+    recordLoginFailure(req, email)
+    return res.status(401).json({ error: 'That code is not correct. Codes change every 30 seconds, so check your authenticator app and try again.' })
+  }
+  loginFailures.delete(email)
+  await audit(req, 'staff.login', { actor: session.user ?? user, detail: { mfa: true } })
+  res.json({ accessToken: session.access_token, email: session.user?.email ?? user.email, expiresIn: Number(session.expires_in) || 3600 })
 })
 
 // Append-only record of staff actions (migration 005). Never blocks the action

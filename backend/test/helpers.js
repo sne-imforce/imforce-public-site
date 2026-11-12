@@ -10,6 +10,11 @@ const STAFF_ID = '11111111-1111-4111-8111-111111111111'
 const OUTSIDER_ID = '22222222-2222-4222-8222-222222222222'
 const VALID_TOKEN = 'aaa.bbb.staff'
 const OUTSIDER_TOKEN = 'aaa.bbb.outsider'
+// JWT-shaped tokens carrying Supabase's authenticator assurance level claim.
+const jwt = (claims, tag) => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.${tag}`
+const MFA_TICKET = jwt({ aal: 'aal1', sub: STAFF_ID }, 'ticket')
+const MFA_SESSION = jwt({ aal: 'aal2', sub: STAFF_ID }, 'session')
+const MFA_CODE = '123456'
 
 Object.assign(process.env, {
   NODE_ENV: 'test',
@@ -21,12 +26,15 @@ Object.assign(process.env, {
   SECURITY_ALERT_WEBHOOK_URL: ALERT_URL,
   SECURITY_BLOCK_PRIVATE_IPS: 'true',
   TRUST_PROXY_HOPS: '1',
+  // The main suites test password sign-in; mfa.test.js sets this to 'true' first.
+  STAFF_MFA_REQUIRED: process.env.STAFF_MFA_REQUIRED ?? 'false',
 })
 
 const realFetch = globalThis.fetch
 const state = {
   calls: [], alerts: [], events: [], contacts: [], employers: [], vacancies: [], audit: [],
   paystackTransaction: null,
+  factors: [],
 }
 
 function json(body, status = 200) {
@@ -42,11 +50,31 @@ globalThis.fetch = async (input, init = {}) => {
     state.calls.push({ method, path: url.pathname, search: url.search, body, auth })
     if (url.pathname === '/auth/v1/token') {
       if (['staff@imforce.co.za', 'second.staff@imforce.co.za'].includes(body.email) && body.password === 'correct-horse') return json({ access_token: VALID_TOKEN, expires_in: 3600, user: { id: STAFF_ID, email: body.email } })
+      if (body.email === 'mfa.staff@imforce.co.za' && body.password === 'correct-horse') return json({ access_token: MFA_TICKET, expires_in: 3600, user: { id: STAFF_ID, email: body.email, factors: state.factors } })
       if (body.email === 'outsider@example.com' && body.password === 'correct-horse') return json({ access_token: OUTSIDER_TOKEN, expires_in: 3600, user: { id: OUTSIDER_ID, email: body.email } })
       return json({ message: 'Invalid login credentials' }, 400)
     }
     if (url.pathname === '/auth/v1/logout') return new Response(null, { status: 204 })
+    if (url.pathname === '/auth/v1/factors' && method === 'POST') {
+      if (auth !== `Bearer ${MFA_TICKET}`) return json({ message: 'unauthorized' }, 401)
+      const factor = { id: crypto.randomUUID(), factor_type: 'totp', status: 'unverified' }
+      state.factors.push(factor)
+      return json({ id: factor.id, type: 'totp', totp: { qr_code: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg"/>', secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/x' } })
+    }
+    const factorRoute = url.pathname.match(/^\/auth\/v1\/factors\/([\w-]+)(?:\/(challenge|verify))?$/)
+    if (factorRoute) {
+      const factor = state.factors.find((item) => item.id === factorRoute[1])
+      if (!factor) return json({ message: 'factor not found' }, 404)
+      if (method === 'DELETE') { state.factors = state.factors.filter((item) => item !== factor); return json({ id: factor.id }) }
+      if (factorRoute[2] === 'challenge') return json({ id: crypto.randomUUID(), expires_at: Date.now() / 1000 + 300 })
+      if (factorRoute[2] === 'verify') {
+        if (body.code !== MFA_CODE) return json({ message: 'Invalid TOTP code entered' }, 422)
+        factor.status = 'verified'
+        return json({ access_token: MFA_SESSION, expires_in: 3600, user: { id: STAFF_ID, email: 'mfa.staff@imforce.co.za', factors: state.factors } })
+      }
+    }
     if (url.pathname === '/auth/v1/user') {
+      if (auth === `Bearer ${MFA_TICKET}` || auth === `Bearer ${MFA_SESSION}`) return json({ id: STAFF_ID, email: 'mfa.staff@imforce.co.za', factors: state.factors })
       if (auth === `Bearer ${VALID_TOKEN}`) return json({ id: STAFF_ID, email: 'staff@imforce.co.za' })
       if (auth === `Bearer ${OUTSIDER_TOKEN}`) return json({ id: OUTSIDER_ID, email: 'outsider@example.com' })
       return json({ message: 'invalid JWT' }, 401)
@@ -149,4 +177,4 @@ function signLegacy(rawBody) {
   return crypto.createHmac('sha512', PAYSTACK_SECRET).update(rawBody).digest('hex')
 }
 
-module.exports = { call, start, stop, state, security, settle, freshIp, validJobOrder, signLegacy, VALID_TOKEN, OUTSIDER_TOKEN, STAFF_ID }
+module.exports = { MFA_TICKET, MFA_SESSION, MFA_CODE, call, start, stop, state, security, settle, freshIp, validJobOrder, signLegacy, VALID_TOKEN, OUTSIDER_TOKEN, STAFF_ID }

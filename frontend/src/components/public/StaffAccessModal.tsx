@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { FiEdit3, FiEye, FiLogOut, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { Link } from 'react-router-dom'
 import DatePicker from '../ui/DatePicker'
 import { industries, type IndustryName } from '../../data/industries'
 import { formatDateDmy, formatSalary } from '../../utils/dates'
-import { getStaffAudit, getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired, saveStaffToken, staffLogin, staffLogout, type StaffAuditEntry, type StaffInquiry } from '../../data/api'
+import { getStaffAudit, getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired, saveStaffToken, staffLogin, staffLogout, verifyStaffMfa, type StaffAuditEntry, type StaffInquiry, type StaffMfaStep, type StaffSession } from '../../data/api'
 import {
   addRecruiterVacancy,
   deleteRecruiterVacancy,
@@ -136,6 +136,10 @@ export function StaffAccessPage() {
   const [draft, setDraft] = useState<VacancyDraft>({ ...emptyDraft })
   const [inquiries, setInquiries] = useState<StaffInquiry[]>([])
   const [signingIn, setSigningIn] = useState(false)
+  const [mfaStep, setMfaStep] = useState<StaffMfaStep | null>(null)
+  const mfaCodeRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { if (mfaStep) mfaCodeRef.current?.focus() }, [mfaStep])
   const [auditEntries, setAuditEntries] = useState<StaffAuditEntry[] | null>(null)
   const [auditError, setAuditError] = useState('')
 
@@ -198,6 +202,7 @@ export function StaffAccessPage() {
     setDraft({ ...emptyDraft })
     setAuditEntries(null)
     setAuditError('')
+    setMfaStep(null)
   }, [])
 
   const signOut = async () => {
@@ -232,6 +237,16 @@ export function StaffAccessPage() {
     }
   }, [staffMember, resetAccess])
 
+  const completeSignIn = async (session: StaffSession) => {
+    saveStaffToken(session.accessToken, session.expiresIn)
+    const [, result] = await Promise.all([loadStaffVacancies(), getStaffInquiries()])
+    setLoginError('')
+    setMfaStep(null)
+    setStaffMember({ email: session.email })
+    setInquiries(result.inquiries)
+    setDraft({ ...emptyDraft })
+  }
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
@@ -241,13 +256,9 @@ export function StaffAccessPage() {
     setSigningIn(true)
     setLoginError('')
     try {
-      const session = await staffLogin(email, password)
-      saveStaffToken(session.accessToken, session.expiresIn)
-      const [, result] = await Promise.all([loadStaffVacancies(), getStaffInquiries()])
-      setLoginError('')
-      setStaffMember({ email: session.email })
-      setInquiries(result.inquiries)
-      setDraft({ ...emptyDraft })
+      const result = await staffLogin(email, password)
+      if (result.mfa) setMfaStep(result.mfa)
+      else await completeSignIn(result)
     } catch (error) {
       saveStaffToken(null)
       setLoginError(error instanceof Error ? error.message : 'Sign in could not be completed.')
@@ -255,6 +266,25 @@ export function StaffAccessPage() {
       setSigningIn(false)
     }
   }
+
+  const handleMfa = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!mfaStep || signingIn) return
+    const code = String(new FormData(event.currentTarget).get('code') ?? '').replace(/\s/g, '')
+    setSigningIn(true)
+    setLoginError('')
+    try {
+      await completeSignIn(await verifyStaffMfa(mfaStep.ticket, mfaStep.factorId, code))
+    } catch (error) {
+      saveStaffToken(null)
+      setLoginError(error instanceof Error ? error.message : 'The code could not be checked.')
+      // Only an expired sign-in ticket sends the user back to the password step.
+      if (error instanceof Error && /Start again/.test(error.message)) setMfaStep(null)
+    } finally {
+      setSigningIn(false)
+    }
+  }
+
 
   const beginEdit = (vacancy: RecruiterVacancy) => {
     setEditingId(vacancy.id)
@@ -349,34 +379,78 @@ export function StaffAccessPage() {
               </Link>
             </div>
 
-            <form className="staff-access-form" onSubmit={handleLogin}>
-              <label>
-                Company email
-                <input
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                />
-              </label>
-              <label>
-                Password
-                <input name="password" type="password" autoComplete="current-password" required />
-              </label>
+            {mfaStep ? (
+              <form key="mfa-step" className="staff-access-form" onSubmit={handleMfa}>
+                {mfaStep.step === 'enroll' ? (
+                  <div className="staff-mfa__setup">
+                    <h2>Set up two-step sign-in</h2>
+                    <ol>
+                      <li>Open an authenticator app on your phone (for example Microsoft Authenticator or Google Authenticator).</li>
+                      <li>Scan this QR code, or type the setup key into the app.</li>
+                      <li>Enter the 6-digit code the app shows.</li>
+                    </ol>
+                    {mfaStep.qrCode && <img className="staff-mfa__qr" src={mfaStep.qrCode} alt="QR code for your authenticator app" width={180} height={180} />}
+                    {mfaStep.secret && <p className="staff-mfa__secret">Setup key: <code>{mfaStep.secret}</code></p>}
+                  </div>
+                ) : (
+                  <p className="staff-access-description">Enter the 6-digit code from your authenticator app.</p>
+                )}
+                <label>
+                  Authentication code
+                  <input
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9 ]{6,7}"
+                    maxLength={7}
+                    required
+                    ref={mfaCodeRef}
+                  />
+                </label>
 
-              {loginError && (
-                <p className="staff-access-error" role="alert">
-                  {loginError}
+                {loginError && (
+                  <p className="staff-access-error" role="alert">
+                    {loginError}
+                  </p>
+                )}
+
+                <button className="staff-access-submit" type="submit" disabled={signingIn} aria-busy={signingIn}>
+                  {signingIn ? 'Checking…' : 'Verify and continue'}
+                </button>
+                <button className="staff-mfa__back" type="button" onClick={() => { setMfaStep(null); setLoginError('') }}>
+                  Use a different account
+                </button>
+              </form>
+            ) : (
+              <form key="password-step" className="staff-access-form" onSubmit={handleLogin}>
+                <label>
+                  Company email
+                  <input
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+                <label>
+                  Password
+                  <input name="password" type="password" autoComplete="current-password" required />
+                </label>
+
+                {loginError && (
+                  <p className="staff-access-error" role="alert">
+                    {loginError}
+                  </p>
+                )}
+
+                <button className="staff-access-submit" type="submit" disabled={signingIn} aria-busy={signingIn}>
+                  {signingIn ? 'Signing in…' : 'Continue to recruiter dashboard'}
+                </button>
+                <p className="staff-access-description">
+                  For authorised IMFORCE staff only. Sign-in attempts are monitored and logged.
                 </p>
-              )}
-
-              <button className="staff-access-submit" type="submit" disabled={signingIn} aria-busy={signingIn}>
-                {signingIn ? 'Signing in…' : 'Continue to recruiter dashboard'}
-              </button>
-              <p className="staff-access-description">
-                For authorised IMFORCE staff only. Sign-in attempts are monitored and logged.
-              </p>
-            </form>
+              </form>
+            )}
           </section>
         ) : (
           <section className="staff-access-panel staff-access-panel--page staff-access-panel--dashboard">

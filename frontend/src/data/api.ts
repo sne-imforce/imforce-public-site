@@ -13,7 +13,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error('We could not reach IMFORCE right now. Check your internet connection and try again.')
   }
   const payload = await response.json().catch(() => ({}))
-  if (response.status === 401 && path.startsWith('/staff/') && path !== '/staff/login') {
+  // Sign-in steps return 401 for a wrong password or code; that is not an expired session.
+  if (response.status === 401 && path.startsWith('/staff/') && !['/staff/login', '/staff/mfa/verify'].includes(path)) {
     saveStaffToken(null)
     sessionExpiredListeners.forEach((listener) => listener())
   }
@@ -32,9 +33,15 @@ export const verifyPaystackPayment = (reference: string) =>
   request<{ paid: true; message: string }>('/payments/paystack/verify', {
     method: 'POST', body: JSON.stringify({ reference }),
   })
+export type StaffSession = { accessToken: string; email: string; expiresIn?: number }
+export type StaffMfaStep = { step: 'enroll' | 'verify'; ticket: string; factorId: string; qrCode?: string | null; secret?: string | null }
 export const staffLogin = (email: string, password: string) =>
-  request<{ accessToken: string; email: string; expiresIn?: number }>('/staff/login', {
+  request<StaffSession & { mfa?: undefined } | { mfa: StaffMfaStep; accessToken?: undefined }>('/staff/login', {
     method: 'POST', body: JSON.stringify({ email, password }),
+  })
+export const verifyStaffMfa = (ticket: string, factorId: string, code: string) =>
+  request<StaffSession>('/staff/mfa/verify', {
+    method: 'POST', body: JSON.stringify({ ticket, factorId, code }),
   })
 
 // The staff token lives in sessionStorage (cleared when the tab closes), never

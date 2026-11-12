@@ -587,3 +587,56 @@
     gap: 2px;
   }
 }
+
+/* Two-step sign-in */
+.staff-mfa__setup h2 {
+  margin: 0 0 8px;
+  color: var(--color-primary);
+  font: 700 18px/1.3 var(--font-heading);
+}
+
+.staff-mfa__setup ol {
+  margin: 0 0 12px;
+  padding-left: 1.2em;
+  color: var(--color-muted);
+  font: 500 13px/1.6 var(--font-interface);
+}
+
+.staff-mfa__qr {
+  display: block;
+  margin: 4px auto 10px;
+  padding: 8px;
+  border: 1px solid rgb(1 46 111 / 12%);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.staff-mfa__secret {
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  font: 500 12px/1.5 var(--font-interface);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.staff-mfa__secret code {
+  color: #15191f;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.staff-mfa__back {
+  justify-self: center;
+  padding: 6px;
+  border: 0;
+  background: none;
+  color: var(--color-accent-text);
+  font: 600 13px/1.4 var(--font-interface);
+  cursor: pointer;
+}
+
+.staff-mfa__back:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
