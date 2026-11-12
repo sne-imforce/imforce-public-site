@@ -76,6 +76,25 @@ Staff now sign in with a **username** instead of their email, and the workspace 
   - A text-splitting regex would have broken the whole site on older iPhones (Safari < 16.4) and was replaced before shipping.
   - Five tabs overflowed phone screens; they now wrap into two rows.
 
+### Round 7 (12 November 2026): "Request changes" email and employer update link
+
+**The flow:** staff request changes, and the employer is emailed a private link. They update the job order and resubmit, and it returns to the review queue marked "Updated by employer".
+
+**Safety measures:**
+- The link token is 256 bits, stored only as a SHA-256 hash.
+- It's carried after `#`, so it never reaches server logs or referrers, and the page removes it from the address bar. It's sent to the API only in a request body.
+- It works once and expires after 7 days (the database enforces a 15-day maximum). It's cancelled by a new link and by approve, reject or reopen.
+- Unknown fields, the contact email and payment data can't be changed, and the same validation as the original order applies.
+- Rate limits apply, invalid links feed the intrusion alarm, and both steps are audited.
+- In the email, the reason is HTML-escaped and the subject and address are checked for header injection.
+- When email isn't configured or fails, staff get the link to send manually; it's never shown when it was emailed.
+
+**Defects found and fixed during this round:**
+- The first email dependency chosen (nodemailer 7) had known high-severity advisories. It was replaced by 10.5.0, with 0 advisories.
+- Re-running migrations 007 and 008 failed once the append-only log held newer actions. The action lists are now `NOT VALID`.
+- Two dialogs on one page shared a fixed `id`, so screen readers announced the wrong title. Dialogs now use unique ids.
+- Internal fields showed the employer's earlier request twice. They're now hidden from the details list.
+
 ---
 
 ## 2. Findings and remediation
@@ -195,10 +214,11 @@ All results were reproduced in the final QA pass. Commands:
 
 | Layer | Command | Result |
 |---|---|---|
-| API and security unit/integration | `cd backend && npm test` | **69 / 69 passed** (including 9 advert-review, 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
-| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **47 / 47 passed**; migrations 001–008 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
+| API and security unit/integration | `cd backend && npm test` | **81 / 81 passed** (including 11 change-request link, 9 advert-review, 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
+| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **55 / 55 passed** on repeated runs; migrations 001–009 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
 | Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **86 / 86 passed** |
 | Loading states (API deliberately slowed) | `node qa/e2e-loading.cjs` | **9 / 9 passed** |
+| Request changes (employer update page and staff side) | `node qa/e2e-changes.cjs` | **26 / 26 passed** on 3 consecutive runs; token removed from the URL and never sent in a URL; axe 0 violations |
 | Advert review and notifications | `node qa/e2e-review.cjs` | **33 / 33 passed**: queue, request changes, approve & publish (pre-filled), unpaid refused, reopen, notifications feed, filters, new/seen, deep links, reference collisions, phone layout; axe 0 violations |
 | Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **45 / 45 passed**: agent name in header, tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
 | Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |

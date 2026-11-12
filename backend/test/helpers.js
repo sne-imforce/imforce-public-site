@@ -36,6 +36,10 @@ Object.assign(process.env, {
   TRUST_PROXY_HOPS: '1',
   // The main suites test password sign-in; mfa.test.js sets this to 'true' first.
   STAFF_MFA_REQUIRED: process.env.STAFF_MFA_REQUIRED ?? 'false',
+  // Development email mode: messages are kept in mailer.outbox instead of being sent.
+  SMTP_HOST: process.env.SMTP_HOST ?? 'log',
+  EMAIL_FROM: 'IMFORCE <admin@imforce.co.za>',
+  PUBLIC_SITE_URL: 'https://www.imforce.co.za',
 })
 
 const realFetch = globalThis.fetch
@@ -44,6 +48,7 @@ const state = {
   paystackTransaction: null,
   factors: [],
   devices: [],
+  changeRequests: [],
 }
 
 function json(body, status = 200) {
@@ -103,6 +108,22 @@ globalThis.fetch = async (input, init = {}) => {
       return row ? json({ id: row.user_id, email: row.email }) : json({ message: 'User not found' }, 404)
     }
     if (url.pathname === '/rest/v1/security_events') { state.events.push(body); return json(undefined, 201) }
+    if (url.pathname === '/rest/v1/job_order_change_requests') {
+      const value = (name) => url.searchParams.get(name)
+      const matches = (row) => (!value('id') || row.id === value('id').slice(3))
+        && (!value('order_id') || row.order_id === value('order_id').slice(3))
+        && (!value('token_hash') || row.token_hash === value('token_hash').slice(3))
+        && (value('responded_at') !== 'is.null' || !row.responded_at)
+        && (value('revoked_at') !== 'is.null' || !row.revoked_at)
+        && (!value('expires_at') || row.expires_at > value('expires_at').slice(3))
+      if (method === 'POST') { const row = { id: crypto.randomUUID(), email_status: 'not_sent', responded_at: null, revoked_at: null, ...body }; state.changeRequests.push(row); return json([row], 201) }
+      const rows = state.changeRequests.filter(matches)
+      if (method === 'PATCH') { rows.forEach((row) => Object.assign(row, body)); return json(rows) }
+      // Honour ?select= like PostgREST, so tests prove which columns the API asks for.
+      const columns = value('select')?.split(',')
+      const pick = (row) => (columns ? Object.fromEntries(columns.map((column) => [column, row[column]])) : row)
+      return json([...rows].sort((a, b) => b.requested_at.localeCompare(a.requested_at)).map(pick))
+    }
     if (url.pathname === '/rest/v1/staff_trusted_devices') {
       const eq = (name) => url.searchParams.get(name)?.replace(/^eq\./, '')
       const matches = (row) => (!eq('id') || row.id === eq('id'))

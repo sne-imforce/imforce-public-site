@@ -26,10 +26,12 @@ alter table public.employer_inquiries add constraint employer_inquiries_reason_r
 create index if not exists employer_inquiries_review_queue on public.employer_inquiries (review_status, created_at desc);
 
 -- Allow the review decisions in the audit trail.
+-- The audit log is append-only, so the action list applies to new entries
+-- (NOT VALID): re-running an older migration never fails on newer actions.
 alter table public.staff_audit_log drop constraint if exists staff_audit_log_action_check;
 alter table public.staff_audit_log add constraint staff_audit_log_action_check check (action in (
   'staff.login', 'staff.logout', 'enquiries.view',
   'vacancy.create', 'vacancy.update', 'vacancy.delete',
   'device.trust', 'device.forget',
   'advert.approve', 'advert.request_changes', 'advert.reject', 'advert.reopen'
-));
+)) not valid;

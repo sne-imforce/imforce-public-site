@@ -100,10 +100,45 @@ export type StaffInquiry = {
   reviewed_at?: string | null
   review_reason?: string | null
   vacancy_id?: string | null
+  /** Latest "request changes" link sent to the employer (never the link itself). */
+  change_request?: {
+    reason: string
+    requested_by_name: string | null
+    requested_at: string
+    expires_at: string
+    email_status: 'sent' | 'failed' | 'not_configured' | 'not_sent'
+    emailed_at: string | null
+    responded_at: string | null
+    revoked_at: string | null
+  } | null
+}
+/** Result of sending an update link: the link is only included when it was NOT emailed. */
+export type ChangeLinkResult = { emailStatus: 'sent' | 'failed' | 'not_configured'; sentTo?: string | null; expiresAt?: string; link?: string | null; error?: string }
+export const resendChangeLink = (id: string) =>
+  request<{ changeLink: ChangeLinkResult }>(`/staff/job-orders/${encodeURIComponent(id)}/change-link`, { method: 'POST', headers: staffHeaders(), body: '{}' })
+
+// Employer side of "request changes" (private link from the email).
+export type JobOrderChanges = { reference: string; reason: string; requestedAt: string; expiresAt: string; details: Record<string, string> }
+export type FieldIssue = { field: string; message: string }
+export const openJobOrderChanges = (token: string) =>
+  request<JobOrderChanges>('/job-order-changes/open', { method: 'POST', body: JSON.stringify({ token }) })
+export async function submitJobOrderChanges(token: string, details: Record<string, string | boolean>) {
+  // Field-level errors are returned alongside the message, so read the body ourselves.
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/api/job-order-changes/submit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, details }),
+    })
+  } catch {
+    throw Object.assign(new Error('We could not reach IMFORCE right now. Check your internet connection and try again.'), { issues: [] as FieldIssue[] })
+  }
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw Object.assign(new Error(payload.error ?? 'Your changes could not be saved.'), { issues: (payload.errors ?? []) as FieldIssue[], status: response.status })
+  return payload as { ok: true; reference: string }
 }
 export type ReviewDecision = 'approve' | 'changes' | 'reject' | 'reopen'
 export const reviewJobOrder = (id: string, body: { decision: ReviewDecision; reason?: string; vacancy?: Partial<Vacancy> }) =>
-  request<{ reviewStatus: string; vacancy: Vacancy | null }>(`/staff/job-orders/${encodeURIComponent(id)}/review`, {
+  request<{ reviewStatus: string; vacancy: Vacancy | null; changeLink: ChangeLinkResult | null }>(`/staff/job-orders/${encodeURIComponent(id)}/review`, {
     method: 'POST', headers: staffHeaders(), body: JSON.stringify(body),
   })
 export type StaffAuditEntry = {

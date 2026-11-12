@@ -15,6 +15,8 @@ const actionLabels: Record<string, string> = {
   'advert.request_changes': 'Requested advert changes',
   'advert.reject': 'Rejected advert',
   'advert.reopen': 'Moved advert back to review',
+  'advert.change_link_resent': 'Sent a new update link',
+  'advert.resubmitted': 'Employer updated advert',
   'device.trust': 'Remembered a device',
   'device.forget': 'Forgot remembered device',
 }
@@ -27,6 +29,8 @@ const actionTone: Record<string, string> = {
   'advert.request_changes': 'warning',
   'advert.reject': 'danger',
   'advert.reopen': 'info',
+  'advert.change_link_resent': 'warning',
+  'advert.resubmitted': 'info',
 }
 
 const formatWhen = (value: string) => new Intl.DateTimeFormat('en-ZA', {
@@ -51,6 +55,8 @@ const detailText = (entry: StaffAuditEntry) => {
   if (typeof entry.detail?.device === 'string') parts.push(entry.detail.device)
   if (entry.detail?.scope === 'all') parts.push('All devices')
   if (entry.detail?.mfa === 'remembered-device') parts.push('From a remembered device')
+  const emailNote: Record<string, string> = { sent: 'Update link emailed', failed: 'Email failed: link given to staff', not_configured: 'Email not set up: link given to staff' }
+  if (typeof entry.detail?.email === 'string' && emailNote[entry.detail.email]) parts.push(emailNote[entry.detail.email])
   return parts.join(' · ')
 }
 

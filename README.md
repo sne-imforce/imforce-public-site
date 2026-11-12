@@ -9,7 +9,7 @@ React/TypeScript frontend with an Express API backed by Supabase. See [productio
 
 ## Local development
 
-1. Copy `backend/.env.example` to `backend/.env` and set the Supabase project URL and keys. Keep the service-role key server-side and out of version control. Apply `backend/migrations/001`–`008` to the Supabase project in order. Add staff with `cd backend && npm run staff:create`; they sign in with their username. Staff sign-in requires an authenticator app (TOTP) by default; see the project documentation.
+1. Copy `backend/.env.example` to `backend/.env` and set the Supabase project URL and keys. Keep the service-role key server-side and out of version control. Apply `backend/migrations/001`–`009` to the Supabase project in order. Add staff with `cd backend && npm run staff:create`; they sign in with their username. Staff sign-in requires an authenticator app (TOTP) by default; see the project documentation.
 2. In `backend`, run `npm ci` then `npm run dev`.
 3. In `frontend`, run `npm ci` then `npm run dev`.
 4. Set `VITE_API_BASE_URL` in the frontend environment only when the API is not served from the same origin; it must be the API origin, without a trailing slash.
@@ -25,7 +25,7 @@ The Vite development server defaults to port 5173 and the API defaults to 3001. 
 ## Tests
 
 - `cd backend && npm test` runs the API security regression suite (offline; all external services are mocked).
-- `qa/e2e-smoke.cjs`, `qa/e2e-admin.cjs`, `qa/e2e-review.cjs` and `qa/e2e-loading.cjs` run the browser end-to-end checks (public site, staff workspace, advert review and notifications, loading states) and `qa/db-permissions.sh` runs the database permission checks (scratch database only). See the QA review for how to run them.
+- `qa/e2e-smoke.cjs`, `qa/e2e-admin.cjs`, `qa/e2e-review.cjs`, `qa/e2e-changes.cjs` and `qa/e2e-loading.cjs` run the browser end-to-end checks (public site, staff workspace, advert review and notifications, loading states) and `qa/db-permissions.sh` runs the database permission checks (scratch database only). See the QA review for how to run them.
 
 ## API
 

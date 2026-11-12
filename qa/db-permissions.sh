@@ -72,4 +72,13 @@ ok   "audit log accepts device.trust / device.forget" "2" "set role service_role
 ok   "008 new job orders start in the review queue" "pending" "insert into public.employer_inquiries(details) values ('{\"jobTitle\":\"Review check\"}') returning review_status;"
 deny "008 rejecting without a reason is refused" "update public.employer_inquiries set review_status = 'rejected', reviewed_at = now(), reviewed_by_name = 'QA' where details->>'jobTitle' = 'Review check';" "check constraint"
 deny "008 approving without a reviewer is refused" "update public.employer_inquiries set review_status = 'approved' where details->>'jobTitle' = 'Review check';" "check constraint"
+ORDER_ID=$($P -At -c "insert into public.employer_inquiries(details) values ('{\"jobTitle\":\"Link check\"}') returning id;" | head -1)
+deny "anon cannot read update links" "set role anon; select 1 from public.job_order_change_requests;" "permission denied"
+deny "authenticated cannot read update links" "set role authenticated; select 1 from public.job_order_change_requests;" "permission denied"
+deny "update link must store a SHA-256 hash, not a raw token" "insert into public.job_order_change_requests(order_id, token_hash, reason, expires_at) values ('$ORDER_ID', 'raw-token', 'Please fix the salary.', now() + interval '7 days');" "check constraint"
+deny "update link cannot last more than 15 days" "insert into public.job_order_change_requests(order_id, token_hash, reason, expires_at) values ('$ORDER_ID', repeat('b', 64), 'Please fix the salary.', now() + interval '60 days');" "check constraint"
+deny "update link needs a real reason" "insert into public.job_order_change_requests(order_id, token_hash, reason, expires_at) values ('$ORDER_ID', repeat('c', 64), 'no', now() + interval '7 days');" "check constraint"
+ok   "service_role can create an update link" "1" "set role service_role; insert into public.job_order_change_requests(order_id, token_hash, reason, expires_at) values ('$ORDER_ID', md5(random()::text) || md5(random()::text), 'Please add the salary range.', now() + interval '7 days') returning 1;"
+deny "service_role cannot delete update-link history" "set role service_role; delete from public.job_order_change_requests;" "permission denied"
+ok   "audit log accepts advert.resubmitted / change_link_resent" "2" "set role service_role; insert into public.staff_audit_log(action) values ('advert.resubmitted'), ('advert.change_link_resent'); select count(*) from (select 1 from public.staff_audit_log where action in ('advert.resubmitted','advert.change_link_resent') order by id desc limit 2) x;"
 echo; [ $fails -eq 0 ] && echo "All database checks passed." || { echo "$fails database check(s) failed."; exit 1; }

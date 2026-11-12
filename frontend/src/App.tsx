@@ -17,6 +17,7 @@ import Placement from './pages/public site/Placement'
 import PrivacyPolicy from './pages/public site/PrivacyPolicy'
 import Certifications from './pages/public site/certifications/Certifications'
 import Employers from './pages/public site/hire talent/Employers'
+import UpdateJobOrder from './pages/public site/hire talent/UpdateJobOrder'
 
 const routeSeo = {
   '/': {
@@ -141,6 +142,12 @@ const routeSeo = {
       url: 'https://www.imforce.co.za/privacy',
     },
   },
+  '/employers/update-job-order': {
+    title: 'Update your job order',
+    description: 'Private page for employers to update a job order after IMFORCE asked for changes.',
+    keywords: [],
+    noIndex: true,
+  },
   '/admin': {
     title: 'Staff sign-in',
     description: 'Authorised IMFORCE staff sign-in.',
@@ -196,6 +203,7 @@ function AppContent() {
         </Route>
         <Route path="/contact" element={<Contact />} />
         <Route path="/employers" element={<Employers />} />
+        <Route path="/employers/update-job-order" element={<UpdateJobOrder />} />
         <Route path="/services/placements" element={<Placement />} />
         <Route path="/certifications" element={<Certifications />} />
         <Route

@@ -4,6 +4,7 @@ const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
 const { createSecurityMonitor } = require('./security')
+const { createMailer, escapeHtml } = require('./mailer')
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -14,6 +15,9 @@ const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY
 const paystackWebhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET
 const configuredOrigins = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',').map((value) => value.trim())
 const paystackCallbackUrl = process.env.PAYSTACK_CALLBACK_URL || `${configuredOrigins[0].replace(/\/$/, '')}/employers`
+// Public website address used in links sent to employers by email.
+const publicSiteUrl = (process.env.PUBLIC_SITE_URL || configuredOrigins[0]).replace(/\/$/, '')
+const mailer = createMailer(process.env)
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? configuredOrigins
   : [...new Set([...configuredOrigins, 'http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'])]
@@ -48,6 +52,9 @@ if (process.env.NODE_ENV === 'production') {
     if (new URL(supabaseUrl).protocol !== 'https:') throw new Error()
   } catch { throw new Error('Production SUPABASE_URL must be a valid HTTPS URL.') }
   if (!staffMfaRequired) console.warn('WARNING: STAFF_MFA_REQUIRED=false. Staff can sign in with a password only.')
+  try { if (new URL(publicSiteUrl).protocol !== 'https:') throw new Error() }
+  catch { throw new Error('PUBLIC_SITE_URL (or the first FRONTEND_ORIGIN) must be an HTTPS URL for links in emails.') }
+  if (!mailer.configured) console.warn('WARNING: SMTP_HOST is not set. Employer emails are not sent; staff will be given links to send themselves.')
   if (securityAlertWebhookUrl) {
     try { if (new URL(securityAlertWebhookUrl).protocol !== 'https:') throw new Error() }
     catch { throw new Error('SECURITY_ALERT_WEBHOOK_URL must be an HTTPS URL.') }
@@ -853,7 +860,11 @@ app.get('/api/staff/inquiries', requireStaff, async (req, res) => {
       supabase('/rest/v1/employer_inquiries?select=id,details,created_at,review_status,reviewed_by_name,reviewed_at,review_reason,vacancy_id&order=created_at.desc&limit=200')
         .catch(() => supabase('/rest/v1/employer_inquiries?select=id,details,created_at&order=created_at.desc&limit=200')),
     ])
-    const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer' }))]
+    // Latest "request changes" link per job order (migration 009); never the token itself.
+    const changeRequests = await supabase('/rest/v1/job_order_change_requests?select=order_id,reason,requested_by_name,requested_at,expires_at,email_status,emailed_at,responded_at,revoked_at&order=requested_at.desc&limit=1000').catch(() => [])
+    const latestChange = new Map()
+    for (const row of changeRequests) if (!latestChange.has(row.order_id)) latestChange.set(row.order_id, row)
+    const inquiries = [...contacts.map((item) => ({ ...item, kind: 'contact' })), ...employers.map((item) => ({ ...item, kind: 'employer', change_request: latestChange.get(item.id) ?? null }))]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     // Enquiries hold personal information, so viewing them is itself audited (POPIA accountability).
     await audit(req, 'enquiries.view', { entityType: 'enquiries', detail: { count: inquiries.length } })
@@ -870,6 +881,71 @@ app.post('/api/staff/vacancies', requireStaff, async (req, res) => {
 })
 // Advert review: an IMFORCE team member approves a paid job order before it
 // goes online, or requests changes / rejects it with a reason.
+// --- "Request changes": private, one-time link for the employer -------------
+const changeLinkDays = 7
+const changeTokenPattern = /^[A-Za-z0-9_-]{43}$/
+const orderReference = (id) => `ORD-${String(id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
+// Fields the employer may edit through the link (not their email, not payment data).
+const employerEditableFields = Object.keys(employerFieldLabels).filter((field) => field !== 'email' && field !== 'authorizedContact')
+
+async function revokeChangeLinks(orderId) {
+  await supabase(`/rest/v1/job_order_change_requests?order_id=eq.${encodeURIComponent(orderId)}&revoked_at=is.null&responded_at=is.null`, {
+    method: 'PATCH', body: { revoked_at: new Date().toISOString() }, prefer: 'return=minimal',
+  }).catch(() => { /* table may not exist before migration 009 */ })
+}
+
+function changeRequestEmail(order, reason, link, expiresAt) {
+  const details = order.details ?? {}
+  const title = String(details.jobTitle ?? 'your job order')
+  const name = String(details.contactName ?? '').split(/\s+/)[0] || 'there'
+  const reference = orderReference(order.id)
+  const expires = new Intl.DateTimeFormat('en-ZA', { timeZone: 'Africa/Johannesburg', day: 'numeric', month: 'long', year: 'numeric' }).format(expiresAt)
+  const text = [
+    `Hello ${name},`, '',
+    `Thank you for your job order for "${title}" (reference ${reference}). Before we publish the advert, our team needs a few changes:`, '',
+    reason, '',
+    `Update your job order using this private link. It works once and expires on ${expires}:`,
+    link, '',
+    'You do not need to pay again. If you have any questions, reply to this email or call 033 492 0600.', '',
+    'IMFORCE Talent Recruitment',
+  ].join('\n')
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#15191f;max-width:560px">
+<p>Hello ${escapeHtml(name)},</p>
+<p>Thank you for your job order for <strong>${escapeHtml(title)}</strong> (reference ${escapeHtml(reference)}). Before we publish the advert, our team needs a few changes:</p>
+<blockquote style="margin:16px 0;padding:12px 16px;border-left:4px solid #e2a93b;background:#fff8e8;white-space:pre-line">${escapeHtml(reason)}</blockquote>
+<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 22px;border-radius:999px;background:#012e6f;color:#ffffff;text-decoration:none;font-weight:bold">Update my job order</a></p>
+<p style="color:#5b6575;font-size:13px">This private link works once and expires on ${escapeHtml(expires)}. Do not forward it.</p>
+<p>You do not need to pay again. If you have any questions, reply to this email or call 033 492 0600.</p>
+<p>IMFORCE Talent Recruitment</p></div>`
+  return { subject: `Changes needed to your IMFORCE job advert: ${title}`, text, html }
+}
+
+// Creates a new link (revoking any earlier one), emails it, and reports the result.
+// The link itself is only returned to staff when the email was NOT sent, so they can send it.
+async function issueChangeLink(req, order, reason) {
+  await revokeChangeLinks(order.id)
+  const token = crypto.randomBytes(32).toString('base64url')
+  const requestedAt = new Date()
+  const expiresAt = new Date(requestedAt.getTime() + changeLinkDays * 86_400_000)
+  const [request] = await supabase('/rest/v1/job_order_change_requests', {
+    method: 'POST', prefer: 'return=representation',
+    body: {
+      order_id: order.id, token_hash: sha256(token), reason,
+      requested_by: req.staffUser.id, requested_by_name: req.staffProfile.display_name,
+      requested_at: requestedAt.toISOString(), expires_at: expiresAt.toISOString(),
+    },
+  })
+  // The token goes after '#', so it is never sent to servers, logs or analytics.
+  const link = `${publicSiteUrl}/employers/update-job-order#token=${token}`
+  const email = changeRequestEmail(order, reason, link, expiresAt)
+  const { status } = await mailer.send({ to: String(order.details?.email ?? ''), ...email })
+  await supabase(`/rest/v1/job_order_change_requests?id=eq.${encodeURIComponent(request.id)}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: { email_status: status, emailed_at: status === 'sent' ? new Date().toISOString() : null },
+  }).catch(() => {})
+  return { emailStatus: status, sentTo: order.details?.email ?? null, expiresAt: expiresAt.toISOString(), link: status === 'sent' ? null : link }
+}
+
 const reviewDecisions = {
   approve: { status: 'approved', action: 'advert.approve' },
   changes: { status: 'changes_requested', action: 'advert.request_changes' },
@@ -930,11 +1006,123 @@ app.post('/api/staff/job-orders/:id/review', requireStaff, async (req, res) => {
       return res.status(502).json({ error: 'The advert could not be published. The job order is back in the review queue; please try again.' })
     }
   }
+  let changeLink = null
+  if (decision.status === 'changes_requested') {
+    try { changeLink = await issueChangeLink(req, { ...order, id: req.params.id }, reason) }
+    catch { changeLink = { emailStatus: 'failed', error: 'The update link could not be created. Use "Send a new link" to try again.' } }
+  } else {
+    await revokeChangeLinks(req.params.id)
+  }
   await audit(req, decision.action, {
     entityType: 'job_order', entityId: req.params.id,
-    detail: { title: vacancy?.title ?? order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, ...(reason ? { reason: reason.slice(0, 300) } : {}) },
+    detail: { title: vacancy?.title ?? order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, ...(reason ? { reason: reason.slice(0, 300) } : {}), ...(changeLink ? { email: changeLink.emailStatus } : {}) },
   })
-  res.json({ reviewStatus: review.review_status, vacancy: vacancy ? toVacancy(vacancy) : null })
+  res.json({ reviewStatus: review.review_status, vacancy: vacancy ? toVacancy(vacancy) : null, changeLink })
+})
+
+// Staff: send the employer a new link (e.g. the first expired or the email bounced).
+app.post('/api/staff/job-orders/:id/change-link', requireStaff, async (req, res) => {
+  if (!uuidPattern.test(req.params.id)) return res.status(404).json({ error: 'Job order not found.' })
+  const id = encodeURIComponent(req.params.id)
+  let order
+  try { ;[order] = await supabase(`/rest/v1/employer_inquiries?id=eq.${id}&select=id,details,review_status,review_reason`) }
+  catch { return res.status(502).json({ error: 'The job order could not be loaded.' }) }
+  if (!order) return res.status(404).json({ error: 'Job order not found.' })
+  if (order.review_status !== 'changes_requested' || !order.review_reason) {
+    return res.status(409).json({ error: 'A new link can only be sent while changes are requested.' })
+  }
+  try {
+    const changeLink = await issueChangeLink(req, order, order.review_reason)
+    await audit(req, 'advert.change_link_resent', { entityType: 'job_order', entityId: req.params.id, detail: { title: order.details?.jobTitle ?? null, company: order.details?.legalName ?? null, email: changeLink.emailStatus } })
+    res.json({ changeLink })
+  } catch { res.status(502).json({ error: 'A new link could not be created. Please try again.' }) }
+})
+
+// Employer: open or submit an update using the private link.
+const invalidChangeLink = 'This link is invalid, has expired or has already been used. Ask IMFORCE to send you a new one.'
+
+async function findOpenChangeRequest(req, token) {
+  if (typeof token !== 'string' || !changeTokenPattern.test(token)) return null
+  const query = new URLSearchParams({
+    select: 'id,order_id,reason,requested_at,expires_at', token_hash: `eq.${sha256(token)}`,
+    responded_at: 'is.null', revoked_at: 'is.null', expires_at: `gt.${new Date().toISOString()}`, limit: '1',
+  })
+  const [request] = await supabase(`/rest/v1/job_order_change_requests?${query}`)
+  if (!request) return null
+  const [order] = await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(request.order_id)}&select=id,details,review_status`)
+  return order?.review_status === 'changes_requested' ? { request, order } : null
+}
+
+const editableView = (details) => ({
+  ...Object.fromEntries(employerEditableFields.map((field) => [field, typeof details?.[field] === 'string' ? details[field] : ''])),
+  email: details?.email ?? '',
+})
+
+app.post('/api/job-order-changes/open', async (req, res) => {
+  if (!requireConfig(res)) return
+  let found
+  try { found = await findOpenChangeRequest(req, req.body?.token) } catch { return res.status(502).json({ error: 'Your job order could not be loaded. Please try again shortly.' }) }
+  if (!found) {
+    security.record(req, 'invalid-change-link', 'low', 'Job order update link that is invalid, expired or used')
+    return res.status(404).json({ error: invalidChangeLink })
+  }
+  res.set('Cache-Control', 'no-store')
+  res.json({
+    reference: orderReference(found.order.id),
+    reason: found.request.reason,
+    requestedAt: found.request.requested_at,
+    expiresAt: found.request.expires_at,
+    details: editableView(found.order.details),
+  })
+})
+
+app.post('/api/job-order-changes/submit', async (req, res) => {
+  if (!requireConfig(res)) return
+  let found
+  try { found = await findOpenChangeRequest(req, req.body?.token) } catch { return res.status(502).json({ error: 'Your changes could not be saved. Please try again shortly.' }) }
+  if (!found) {
+    security.record(req, 'invalid-change-link', 'low', 'Job order update submitted with an invalid, expired or used link')
+    return res.status(404).json({ error: invalidChangeLink })
+  }
+  const submitted = req.body?.details
+  if (!submitted || typeof submitted !== 'object' || Array.isArray(submitted)) return res.status(400).json({ error: 'Your changes were not received correctly. Please try again.' })
+  const unexpected = Object.keys(submitted).filter((field) => !employerEditableFields.includes(field) && field !== 'authorizedContact')
+  if (unexpected.length) return res.status(400).json({ error: 'The update contains fields that cannot be changed here.', errors: [{ field: 'details', message: 'Only the visible fields can be changed.' }] })
+  const { order, request } = found
+  // Locked: the contact email the link was sent to, and all payment data.
+  const candidate = { ...editableView(order.details), ...submitted, email: order.details.email, authorizedContact: submitted.authorizedContact === true }
+  const validation = validateEmployerOrder(Object.fromEntries(Object.entries(candidate).filter(([field, value]) => field in employerFieldLabels && (value !== '' || field === 'email'))))
+  if (validation) return res.status(400).json(validation)
+
+  // Use the link once: claim it before changing the order.
+  const claimed = await supabase(`/rest/v1/job_order_change_requests?id=eq.${encodeURIComponent(request.id)}&responded_at=is.null&revoked_at=is.null`, {
+    method: 'PATCH', body: { responded_at: new Date().toISOString() }, prefer: 'return=representation',
+  }).catch(() => [])
+  if (!claimed?.length) return res.status(404).json({ error: invalidChangeLink })
+
+  const updatedDetails = { ...order.details }
+  for (const field of employerEditableFields) updatedDetails[field] = typeof candidate[field] === 'string' ? candidate[field].trim() : ''
+  updatedDetails.authorizedContact = true
+  updatedDetails.resubmittedAt = new Date().toISOString()
+  updatedDetails.lastChangeRequest = String(request.reason).slice(0, 1000)
+  try {
+    const updated = await supabase(`/rest/v1/employer_inquiries?id=eq.${encodeURIComponent(order.id)}&review_status=eq.changes_requested`, {
+      method: 'PATCH', prefer: 'return=representation',
+      body: { details: updatedDetails, review_status: 'pending', reviewed_by: null, reviewed_by_name: null, reviewed_at: null, review_reason: null },
+    })
+    if (!updated?.length) throw new Error('not updated')
+  } catch {
+    // Give the employer their link back so they can try again.
+    await supabase(`/rest/v1/job_order_change_requests?id=eq.${encodeURIComponent(request.id)}`, { method: 'PATCH', body: { responded_at: null }, prefer: 'return=minimal' }).catch(() => {})
+    return res.status(502).json({ error: 'Your changes could not be saved. Please try again in a moment.' })
+  }
+  const company = String(order.details?.legalName ?? 'Employer').slice(0, 60)
+  await audit(req, 'advert.resubmitted', {
+    actor: { id: null, email: order.details?.email ?? null }, actorName: `${company} (employer)`,
+    entityType: 'job_order', entityId: order.id,
+    detail: { title: updatedDetails.jobTitle ?? null, company },
+  })
+  res.json({ ok: true, reference: orderReference(order.id) })
 })
 
 app.get('/api/staff/audit', requireStaff, async (_req, res) => {
@@ -998,4 +1186,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { app, security, isEmail }
+module.exports = { app, security, isEmail, mailer }

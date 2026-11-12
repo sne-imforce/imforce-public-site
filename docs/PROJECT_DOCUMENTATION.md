@@ -188,7 +188,7 @@ sequenceDiagram
 ├── backend/
 │   ├── server.js                   Express API (routes, validation, Paystack, staff auth)
 │   ├── security.js                 Intrusion detection: honeypots, scoring, blocking, alerts
-│   ├── migrations/                 Supabase SQL (run in order 001 → 008)
+│   ├── migrations/                 Supabase SQL (run in order 001 → 009)
 │   ├── test/                       node:test security regression suite (mocks all services)
 │   └── .env.example                Configuration template (no secrets)
 └── frontend/
@@ -222,6 +222,7 @@ sequenceDiagram
 | `/about` | About | Industries dropdown links to `/careers?industry=…` |
 | `/careers` | Careers | Filters saved in `localStorage` (validated on load); vacancy detail; Apply → HTTPS Nexora link only |
 | `/employers` | For Employers | Job-order form with draft autosave (`sessionStorage`), review dialog, Paystack checkout in a new tab |
+| `/employers/update-job-order#token=…` | Private page from the "Request changes" email. The token is read from after `#` and removed from the address bar immediately. Shows what IMFORCE asked to change and the job order pre-filled; the contact email and payment data cannot be changed; resubmitting sends the order back for review. `noindex`, `no-store`, `no-referrer`. | Employers with the link |
 | `/services/placements` | Permanent staffing | |
 | `/certifications` (`/credentials` redirects) | Certifications & credentials | |
 | `/fee-calculator` | Fee calculator | Can prefill the employer form |
@@ -284,6 +285,9 @@ Every staff response is sent with `Cache-Control: no-store`.
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
 | `POST /api/staff/devices/forget` | Stop remembering this browser (`{}`) or every browser for the account (`{"scope":"all"}`) | 60 |
 | `POST /api/staff/job-orders/:id/review` | `{decision: 'approve'\|'changes'\|'reject'\|'reopen', reason?, vacancy?}`. Approve needs a paid order and a valid job post (published in the same step); changes/reject need a 5–1,000 character reason. Records the reviewer, time and reason; guarded against two staff reviewing at once; a failed publish returns the order to the queue. | 60 |
+| `POST /api/staff/job-orders/:id/change-link` | Sends the employer a new update link (cancels the previous one). Only while changes are requested. | 60 |
+| `POST /api/job-order-changes/open` | Public. `{token}` → reason, expiry and the editable job order (no payment data). Invalid, expired or used links: 404 (and a low-severity security event). | 6 / IP / min |
+| `POST /api/job-order-changes/submit` | Public. `{token, details}`: same validation as the original job order; email and payment fields cannot be changed. Uses the link once; the order returns to *Awaiting review*. | 6 / IP / min |
 | `GET /api/staff/audit` | Latest 500 staff audit log entries (searched and paged in the browser) | 60 |
 | `GET /api/staff/me` | Current agent: `{email, displayName, username}` | 60 |
 | `GET /api/staff/vacancies` | All vacancies, including client names | 60 |
@@ -310,6 +314,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `006_staff_usernames.sql` | `staff_profiles.username` (unique, lowercase, 3–32 characters) and `display_name` (the agent's name shown in the workspace); existing staff are given usernames and names from their email automatically; `staff_audit_log.actor_name` |
 | `007_staff_trusted_devices.sql` | `staff_trusted_devices` for \"Remember this device for 30 days\": stores only the SHA-256 hash of the device token, has a 31-day maximum, can be revoked but not deleted, and RLS hides it; adds the `device.trust` and `device.forget` audit actions |
 | `008_advert_review.sql` | Advert review on `employer_inquiries`: `review_status` (pending, approved, changes_requested, rejected), reviewer, time, reason (required to reject or request changes) and the published `vacancy_id`; review actions added to the audit log |
+| `009_job_order_change_requests.sql` | `job_order_change_requests`: one row per \"Request changes\" link (SHA-256 token hash, reason, who asked, expiry of at most 15 days, email status, used or revoked time); RLS hides it; history is kept. Adds `advert.change_link_resent` and `advert.resubmitted` audit actions. Audit action lists in 007–009 are `NOT VALID`, so re-running an older migration never fails on newer log entries. |
 
 ### Tables
 
@@ -321,6 +326,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `employer_inquiries` | Job order `details` JSONB, including payment status and reference (personal and company information) | None |
 | `security_events` | Intrusion-detection audit trail | None |
 | `staff_trusted_devices` | Remembered browsers for two-step sign-in (token hash, device label, expiry, revoked flag) | None |
+| `job_order_change_requests` | Private update links sent to employers (hash only) and whether they were emailed, used, expired or replaced | None |
 | `staff_audit_log` | Who did what: sign-in and sign-out, viewing enquiries, vacancy create, update (changed fields) and delete (snapshot) | None. Append-only. |
 
 The API uses the **service-role key** for writes and staff reads, and the **anon key** for the public vacancy listing. Both keys stay on the server.
@@ -413,6 +419,10 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 | `SECURITY_ALERT_WEBHOOK_URL` | recommended | **medium** | HTTPS Slack/Teams webhook for alarms |
 | `SECURITY_ALLOWLIST_IPS` | optional | no | IPs that are never blocked |
 | `SECURITY_BLOCK_PRIVATE_IPS` | tests only | no | `true` lets private IPs be blocked (used by the test suite) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | optional | no | SMTP server for employer emails. Empty: not sent, and staff get the link to send themselves. `log`: development only, printed to the API log. |
+| `SMTP_PASSWORD` | with SMTP | **HIGH** | SMTP password or app password |
+| `EMAIL_FROM`, `EMAIL_REPLY_TO` | with SMTP | no | Sender, e.g. `IMFORCE Talent Recruitment <admin@imforce.co.za>`, and reply-to address |
+| `PUBLIC_SITE_URL` | optional | no | HTTPS website address used in email links; defaults to the first `FRONTEND_ORIGIN` |
 | `STAFF_MFA_REQUIRED` | no | no | Default **on**. `false` turns off the authenticator-code step (local development only; the API logs a warning). |
 
 ### Frontend (build time)
@@ -425,7 +435,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 
 ## 13. Local development
 
-Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–008 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
+Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–009 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
 
 ```bash
 cd backend && cp .env.example .env   # then fill in the values
@@ -486,7 +496,7 @@ The hosting choice is still open (the scope compares xneelo, Hostinger and other
 1. **Frontend**: static hosting of `frontend/dist` with SPA fallback (all paths → `index.html`), HTTPS, and the headers in `public/_headers`.
 2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`. Start it with `npm start`. It shuts down gracefully on SIGTERM and writes JSON access, security and error logs to stdout for the host to collect.
 3. **Routing**: either the same origin (`/api/*` reverse-proxied to the API) or a separate API origin set in `VITE_API_BASE_URL`.
-4. **Supabase**: run migrations 001 → 008, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
+4. **Supabase**: run migrations 001 → 009, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
 5. **Paystack**: webhook `https://<api-host>/api/payments/paystack/webhook`; test mode end to end before switching to live keys.
 6. **Alerts**: create a Slack or Teams incoming webhook in a monitored channel and set `SECURITY_ALERT_WEBHOOK_URL`.
 
@@ -548,6 +558,16 @@ where user_id = '<uuid>' and revoked_at is null;
 ```
 
 Then reset their password. Staff can also do this themselves: **Forget this device** in the workspace header revokes that browser, and the API accepts `{"scope":"all"}` to revoke every browser.
+
+### 17.7b Advert changes: how the employer is asked and how they respond
+
+1. In **Advert review**, staff choose **Request changes** and write what needs to change.
+2. The employer is emailed a private link that works **once** and expires after **7 days**. If email isn't set up or fails, staff see a **Copy link** box and send it themselves. Only send it to the employer's contact email: anyone with the link can edit that job order.
+3. The employer opens the link, sees the request and their job order pre-filled, makes the changes and resubmits. They can't change the contact email or anything about payment.
+4. The order returns to **Awaiting review**, marked **Updated by employer**, and appears under Notifications.
+5. If the link expires or the email bounced, use **Send a new link**; the old link stops working. Approving, rejecting or moving the order back to review also cancels any outstanding link.
+
+To turn on email, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` and `EMAIL_REPLY_TO` (see §12) and restart the API. For a Microsoft 365 or Google Workspace mailbox, use its SMTP settings with an app password.
 
 ### 17.8 Check who changed or deleted something
 

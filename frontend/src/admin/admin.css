@@ -1023,3 +1023,40 @@
     justify-self: start;
   }
 }
+
+.review-panel__resubmitted {
+  margin-bottom: 12px;
+}
+
+.review-panel__resubmitted .review-panel__reason {
+  margin-top: 6px;
+}
+
+.review-panel__link {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #3c4654;
+  font-size: 13px;
+}
+
+.review-panel__link svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.review-panel__link.is-expired {
+  color: #7a4d00;
+}
+
+.confirm-dialog__field input {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgb(1 46 111 / 22%);
+  border-radius: 10px;
+  font: 500 13px/1.4 var(--font-interface);
+}
+
+.confirm-dialog__copy {
+  margin-top: 10px;
+}

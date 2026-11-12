@@ -101,12 +101,19 @@ export function buildNotifications(inquiries: StaffInquiry[], vacancies: Recruit
     const reviewLink = { to: `/admin/review?order=${encodeURIComponent(order.id)}`, label: 'Review' }
     const state = reviewState(order)
     const created = time(order.created_at)
-    if (state === 'awaiting-review') {
+    const link = order.change_request
+    const linkExpired = Boolean(link && !link.responded_at && !link.revoked_at && time(link.expires_at) < now)
+    if (state === 'awaiting-review' && typeof details.resubmittedAt === 'string') {
+      // The employer used the private link to make the requested changes.
+      items.push({ id: `resubmitted-${order.id}-${details.resubmittedAt}`, kind: 'action', title: `Employer updated their advert: ${role}`, detail: `${company} made the changes you asked for. Review it again. ${reference}`, at: time(details.resubmittedAt), link: reviewLink })
+    } else if (state === 'awaiting-review') {
       const paidAt = time(typeof details.paymentPaidAt === 'string' ? details.paymentPaidAt : '') || created
       items.push({ id: `review-${order.id}`, kind: 'action', title: `Advert awaiting review: ${role}`, detail: `${company} paid the activation fee. Approve the advert before it goes online. ${reference}`, at: paidAt, link: reviewLink })
+    } else if (state === 'changes' && linkExpired && link) {
+      items.push({ id: `link-expired-${order.id}-${link.expires_at}`, kind: 'reminder', title: `Update link expired: ${company}`, detail: `${company} did not update the ${role} advert before the link expired. Send a new link or follow up. ${reference}`, at: time(link.expires_at), link: reviewLink })
     } else if (state === 'awaiting-payment' && now - created > 2 * DAY_MS) {
       items.push({ id: `unpaid-${order.id}`, kind: 'reminder', title: `Follow up payment: ${company}`, detail: `The ${role} job order has been unpaid for ${daysBetween(created, now)} days. ${reference}`, at: created + 2 * DAY_MS, link: reviewLink })
-    } else if (state === 'changes' && order.reviewed_at && now - time(order.reviewed_at) > 5 * DAY_MS) {
+    } else if (state === 'changes' && !linkExpired && order.reviewed_at && now - time(order.reviewed_at) > 5 * DAY_MS) {
       items.push({ id: `changes-${order.id}`, kind: 'reminder', title: `No update yet: ${company}`, detail: `Changes to the ${role} advert were requested ${daysBetween(time(order.reviewed_at), now)} days ago. ${reference}`, at: time(order.reviewed_at) + 5 * DAY_MS, link: reviewLink })
     }
   }

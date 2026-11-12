@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { FiAlertTriangle, FiEdit3 } from 'react-icons/fi'
 import Spinner from '../components/ui/Spinner'
 
@@ -26,6 +26,9 @@ type Props = {
 export default function ConfirmDialog({
   open, title, children, confirmLabel, busyLabel = 'Working…', busy = false, tone = 'danger', confirmDisabled = false, error = '', onConfirm, onCancel,
 }: Props) {
+  // Unique ids: a page can hold several dialogs (each must announce its own title).
+  const titleId = useId()
+  const bodyId = useId()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
 
@@ -44,8 +47,8 @@ export default function ConfirmDialog({
     <dialog
       ref={dialogRef}
       className={`confirm-dialog confirm-dialog--${tone}`}
-      aria-labelledby="confirm-dialog-title"
-      aria-describedby="confirm-dialog-body"
+      aria-labelledby={titleId}
+      aria-describedby={bodyId}
       onCancel={(event) => {
         // Escape key: keep the dialog open while the action is running.
         event.preventDefault()
@@ -58,8 +61,8 @@ export default function ConfirmDialog({
     >
       <div className="confirm-dialog__panel">
         <span className="confirm-dialog__icon" aria-hidden="true">{tone === 'danger' ? <FiAlertTriangle /> : <FiEdit3 />}</span>
-        <h2 id="confirm-dialog-title">{title}</h2>
-        <div id="confirm-dialog-body" className="confirm-dialog__body">{children}</div>
+        <h2 id={titleId}>{title}</h2>
+        <div id={bodyId} className="confirm-dialog__body">{children}</div>
         {error && <p className="staff-access-error" role="alert">{error}</p>}
         <div className="confirm-dialog__actions">
           <button ref={cancelRef} type="button" className="admin__button" onClick={onCancel} disabled={busy}>

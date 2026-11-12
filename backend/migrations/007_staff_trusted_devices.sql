@@ -23,12 +23,14 @@ revoke all on public.staff_trusted_devices from public, anon, authenticated;
 grant select, insert, update on public.staff_trusted_devices to service_role;
 
 -- Allow the new audit actions.
+-- The audit log is append-only, so the action list applies to new entries
+-- (NOT VALID): re-running an older migration never fails on newer actions.
 alter table public.staff_audit_log drop constraint if exists staff_audit_log_action_check;
 alter table public.staff_audit_log add constraint staff_audit_log_action_check check (action in (
   'staff.login', 'staff.logout', 'enquiries.view',
   'vacancy.create', 'vacancy.update', 'vacancy.delete',
   'device.trust', 'device.forget'
-));
+)) not valid;
 
 -- Lost or stolen laptop: revoke every remembered device for a staff member with
 --   update public.staff_trusted_devices set revoked_at = now()

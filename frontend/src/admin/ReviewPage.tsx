@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { FiCheckCircle, FiEdit3, FiRefreshCw, FiRotateCcw, FiXCircle } from 'react-icons/fi'
+import { FiCheckCircle, FiCopy, FiEdit3, FiMail, FiRefreshCw, FiRotateCcw, FiXCircle } from 'react-icons/fi'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { reviewJobOrder, type ReviewDecision, type StaffInquiry } from '../data/api'
+import { resendChangeLink, reviewJobOrder, type ChangeLinkResult, type ReviewDecision, type StaffInquiry } from '../data/api'
 import { formatDateDmy } from '../utils/dates'
 import ConfirmDialog from './ConfirmDialog'
 import DataTable, { type Column, type Filter } from './DataTable'
@@ -47,15 +47,40 @@ export default function ReviewPage() {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Shown when the update link could not be emailed, so staff can send it themselves.
+  const [now] = useState(() => Date.now())
+  const [manualLink, setManualLink] = useState<(ChangeLinkResult & { role: string }) | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [resending, setResending] = useState<string | null>(null)
+
+  const announceLink = (result: ChangeLinkResult | null, role: string) => {
+    if (result?.emailStatus === 'sent') notify(`Changes requested for “${role}”. The employer was emailed a private link at ${result.sentTo}.`)
+    else if (result?.link) { setCopied(false); setManualLink({ ...result, role }) }
+    else notify(result?.error ?? `Changes requested for “${role}”, but the update link could not be created. Use “Send a new link”.`)
+  }
+  const resend = async (row: Row) => {
+    setResending(row.id)
+    try {
+      const { changeLink } = await resendChangeLink(row.id)
+      await reloadInquiries()
+      if (changeLink.emailStatus === 'sent') notify(`A new link was emailed to ${changeLink.sentTo}. The previous link no longer works.`)
+      else announceLink(changeLink, row.role)
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : 'A new link could not be sent.')
+    } finally {
+      setResending(null)
+    }
+  }
 
   const ask = (row: Row, decision: PendingDecision['decision']) => { setPending({ row, decision }); setReason(''); setError('') }
   const confirm = async () => {
     if (!pending || busy) return
     setBusy(true); setError('')
     try {
-      await reviewJobOrder(pending.row.id, { decision: pending.decision, reason: reason.trim() || undefined })
+      const result = await reviewJobOrder(pending.row.id, { decision: pending.decision, reason: reason.trim() || undefined })
       await reloadInquiries()
-      notify({ changes: `Changes requested for “${pending.row.role}”.`, reject: `“${pending.row.role}” was rejected.`, reopen: `“${pending.row.role}” is back in the review queue.` }[pending.decision])
+      if (pending.decision === 'changes') announceLink(result.changeLink, pending.row.role)
+      else notify({ reject: `“${pending.row.role}” was rejected.`, reopen: `“${pending.row.role}” is back in the review queue.` }[pending.decision])
       setPending(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The decision could not be saved. Please try again.')
@@ -74,7 +99,12 @@ export default function ReviewPage() {
     },
     {
       key: 'review', header: 'Review', sortValue: (row) => ['awaiting-review', 'changes', 'awaiting-payment', 'approved', 'rejected'].indexOf(row.state),
-      render: (row) => <span className={`admin-badge admin-badge--${reviewBadge[row.state].tone}`}>{reviewBadge[row.state].text}</span>,
+      render: (row) => (
+        <span className="admin-badges">
+          <span className={`admin-badge admin-badge--${reviewBadge[row.state].tone}`}>{reviewBadge[row.state].text}</span>
+          {row.state === 'awaiting-review' && row.order.details?.resubmittedAt && <span className="admin-badge admin-badge--success">Updated by employer</span>}
+        </span>
+      ),
     },
   ]
 
@@ -88,6 +118,12 @@ export default function ReviewPage() {
       <div className="review-panel__decision">
         {row.state === 'awaiting-review' && (
           <>
+            {typeof row.order.details?.resubmittedAt === 'string' && (
+              <div className="review-panel__resubmitted">
+                <strong>The employer updated this job order on {formatDateDmy(String(row.order.details.resubmittedAt))}</strong> after being asked:
+                {row.order.details?.lastChangeRequest && <blockquote className="review-panel__reason">{String(row.order.details.lastChangeRequest)}</blockquote>}
+              </div>
+            )}
             <p>Check the details above, then approve the advert to publish it on the careers page, or ask the employer for changes.</p>
             <div className="review-panel__actions">
               <button type="button" className="admin__button admin__button--primary" onClick={() => navigate(`/admin/jobs?order=${encodeURIComponent(row.id)}`)}>
@@ -113,7 +149,13 @@ export default function ReviewPage() {
               {row.order.reviewed_at ? ` on ${formatDateDmy(row.order.reviewed_at)}` : ''}.
             </p>
             {row.order.review_reason && <blockquote className="review-panel__reason">{row.order.review_reason}</blockquote>}
+            {row.state === 'changes' && <ChangeLinkStatus order={row.order} now={now} />}
             <div className="review-panel__actions">
+              {row.state === 'changes' && (
+                <button type="button" className="admin__button" disabled={resending === row.id} onClick={() => { void resend(row) }}>
+                  <FiMail aria-hidden="true" /> {resending === row.id ? 'Sending…' : 'Send a new link'}
+                </button>
+              )}
               <button type="button" className="admin__button" onClick={() => ask(row, 'reopen')}><FiRotateCcw aria-hidden="true" /> Move back to review</button>
             </div>
           </>
@@ -195,6 +237,50 @@ export default function ReviewPage() {
           </>
         )}
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={manualLink !== null}
+        title="Send the update link to the employer"
+        confirmLabel="Done"
+        tone="neutral"
+        onConfirm={() => setManualLink(null)}
+        onCancel={() => setManualLink(null)}
+      >
+        {manualLink && (
+          <>
+            <p>
+              {manualLink.emailStatus === 'failed'
+                ? 'The email could not be sent.'
+                : 'Email sending is not set up yet.'}{' '}
+              Copy this private link and send it to {manualLink.sentTo ?? 'the employer'} yourself, so they can update “{manualLink.role}”.
+            </p>
+            <label className="confirm-dialog__field">
+              Private update link
+              <input readOnly value={manualLink.link ?? ''} onFocus={(event) => event.currentTarget.select()} />
+              <small>It works once and expires on {manualLink.expiresAt ? formatDateDmy(manualLink.expiresAt) : 'in 7 days'}. Send it only to the employer; anyone with it can edit this job order.</small>
+            </label>
+            <button
+              type="button"
+              className="admin__button confirm-dialog__copy"
+              onClick={() => { void navigator.clipboard?.writeText(manualLink.link ?? '').then(() => setCopied(true)) }}
+            >
+              <FiCopy aria-hidden="true" /> {copied ? 'Copied' : 'Copy link'}
+            </button>
+          </>
+        )}
+      </ConfirmDialog>
     </div>
   )
+}
+
+/** Where the employer's update link stands. */
+function ChangeLinkStatus({ order, now }: { order: StaffInquiry; now: number }) {
+  const link = order.change_request
+  if (!link) return <p className="review-panel__link">No update link has been sent yet. Use “Send a new link”.</p>
+  const expired = !link.responded_at && !link.revoked_at && Date.parse(link.expires_at) < now
+  const status = link.revoked_at ? 'Replaced or cancelled'
+    : expired ? `Expired on ${formatDateDmy(link.expires_at)}. Send a new link if the employer still needs to update it`
+      : link.email_status === 'sent' ? `Emailed to ${String(order.details?.email ?? 'the employer')} on ${formatDateDmy(link.emailed_at ?? link.requested_at)} · expires ${formatDateDmy(link.expires_at)}`
+        : `Not emailed (${link.email_status === 'failed' ? 'email failed' : 'email not set up'}). Send a new link to get a link you can copy · expires ${formatDateDmy(link.expires_at)}`
+  return <p className={`review-panel__link${expired ? ' is-expired' : ''}`}><FiMail aria-hidden="true" /> Update link: {status}.</p>
 }

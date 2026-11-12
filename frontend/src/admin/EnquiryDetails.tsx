@@ -2,7 +2,7 @@ import type { StaffInquiry } from '../data/api'
 import { enquiryReference } from './jobOrders'
 
 // Internal or payment-plumbing fields that staff do not need to read.
-const hiddenFields = new Set(['authorizedContact', 'paymentStatus', 'paymentAmountMinor', 'paymentCurrency', 'paystackTransactionId'])
+const hiddenFields = new Set(['authorizedContact', 'paymentStatus', 'paymentAmountMinor', 'paymentCurrency', 'paystackTransactionId', 'resubmittedAt', 'lastChangeRequest'])
 // Only build a mailto: link from a plain, single address (no header injection).
 const isSafeEmail = (value: string) => /^[^\s@<>"?&,;:]+@[^\s@<>"?&,;:]+\.[^\s@<>"?&,;:]+$/.test(value) && value.length <= 254
 
