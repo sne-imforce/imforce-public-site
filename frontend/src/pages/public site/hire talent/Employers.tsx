@@ -902,7 +902,7 @@ function Employers() {
                   } finally { setSubmitting(false) }
                 }}
               >
-                {submitting ? 'Opening Paystack…' : 'Checkout with Paystack'}
+                {submitting ? 'Opening Paystack…' : 'Checkout'}
               </button>
             </div>
           </div>
