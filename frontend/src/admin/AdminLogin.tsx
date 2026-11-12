@@ -40,11 +40,13 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
   const handleMfa = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!mfaStep || busy) return
-    const code = String(new FormData(event.currentTarget).get('code') ?? '').replace(/\s/g, '')
+    const formData = new FormData(event.currentTarget)
+    const code = String(formData.get('code') ?? '').replace(/\s/g, '')
+    const rememberDevice = formData.get('rememberDevice') === 'on'
     setBusy(true)
     setError('')
     try {
-      await onSignedIn(await verifyStaffMfa(mfaStep.ticket, mfaStep.factorId, code))
+      await onSignedIn(await verifyStaffMfa(mfaStep.ticket, mfaStep.factorId, code, rememberDevice))
     } catch (cause) {
       saveStaffToken(null)
       setError(cause instanceof Error ? cause.message : 'The code could not be checked.')
@@ -85,6 +87,13 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
           <label>
             Authentication code
             <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} required ref={codeRef} />
+          </label>
+          <label className="staff-mfa__remember">
+            <input type="checkbox" name="rememberDevice" aria-describedby="remember-device-help" />
+            <span>
+              Remember this device for 30 days
+              <small id="remember-device-help">You’ll only need your password on this computer. Don’t tick this on a shared or public computer.</small>
+            </span>
           </label>
           {error && <p className="staff-access-error" role="alert">{error}</p>}
           <button className="staff-access-submit" type="submit" disabled={busy} aria-busy={busy}>

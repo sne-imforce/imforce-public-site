@@ -99,7 +99,7 @@ app.use((req, res, next) => {
   })
   next()
 })
-app.use(cors({ origin: allowedOrigins }))
+app.use(cors({ origin: allowedOrigins, credentials: true }))
 app.use(security.guard)
 app.use('/api', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json')) {
@@ -237,6 +237,46 @@ function fromVacancy(body) {
   }
 }
 
+// --- Remembered (trusted) devices for staff two-factor sign-in -------------
+// A random token lives in an HttpOnly cookie scoped to /api/staff; only its
+// SHA-256 hash is stored (migration 007). It skips the authenticator step on
+// that browser for 30 days, for that staff account only, until revoked.
+const trustedDeviceCookie = 'imf_trusted_device'
+const trustedDeviceDays = 30
+const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex')
+
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const index = part.indexOf('=')
+    if (index > 0 && part.slice(0, index).trim() === name) return decodeURIComponent(part.slice(index + 1).trim())
+  }
+  return ''
+}
+
+function setTrustedDeviceCookie(res, token, maxAgeSeconds) {
+  const attributes = [`${trustedDeviceCookie}=${token}`, 'Path=/api/staff', 'HttpOnly', 'SameSite=Strict', `Max-Age=${maxAgeSeconds}`]
+  if (process.env.NODE_ENV === 'production') attributes.push('Secure')
+  res.append('Set-Cookie', attributes.join('; '))
+}
+
+// Returns the active trusted-device row for this browser and user, or null.
+async function findTrustedDevice(req, userId) {
+  const token = readCookie(req, trustedDeviceCookie)
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token) || !userId) return null
+  const query = new URLSearchParams({
+    select: 'id', token_hash: `eq.${sha256(token)}`, user_id: `eq.${userId}`,
+    revoked_at: 'is.null', expires_at: `gt.${new Date().toISOString()}`, limit: '1',
+  })
+  try { return (await supabase(`/rest/v1/staff_trusted_devices?${query}`))[0] ?? null } catch { return null }
+}
+
+function describeDevice(req) {
+  const agent = String(req.get('user-agent') || '')
+  const browser = /Edg\//.test(agent) ? 'Edge' : /Chrome\//.test(agent) ? 'Chrome' : /Firefox\//.test(agent) ? 'Firefox' : /Safari\//.test(agent) ? 'Safari' : 'Browser'
+  const system = /Windows/.test(agent) ? 'Windows' : /Android/.test(agent) ? 'Android' : /iPhone|iPad/.test(agent) ? 'iOS' : /Mac OS X/.test(agent) ? 'macOS' : /Linux/.test(agent) ? 'Linux' : 'unknown system'
+  return `${browser} on ${system}`
+}
+
 // Reads claims from a token Supabase has already validated (via /auth/v1/user).
 // Never use this on its own to trust a token: it does not check the signature.
 function tokenClaims(token) {
@@ -259,7 +299,8 @@ async function requireStaff(req, res, next) {
       security.record(req, 'non-staff-token', 'high', 'Valid account without an active staff profile called a staff route')
       return res.status(403).json({ error: 'This account is not authorized for staff access.' })
     }
-    if (staffMfaRequired && tokenClaims(token).aal !== 'aal2') {
+    req.trustedDevice = staffMfaRequired ? await findTrustedDevice(req, user.id) : null
+    if (staffMfaRequired && tokenClaims(token).aal !== 'aal2' && !req.trustedDevice) {
       security.record(req, 'staff-token-without-mfa', 'medium', 'Staff route called with a session that has not completed two-factor sign-in')
       return res.status(401).json({ error: 'Two-factor sign-in is required. Sign in again.' })
     }
@@ -659,6 +700,14 @@ app.post('/api/staff/login', async (req, res) => {
       // staff route until the authenticator code is verified below.
       const ticket = session.access_token
       const verified = (session.user.factors ?? []).find((factor) => factor.factor_type === 'totp' && factor.status === 'verified')
+      const device = verified ? await findTrustedDevice(req, profile.user_id) : null
+      if (device) {
+        // Remembered device: the password is enough on this browser for this account.
+        try { await supabase(`/rest/v1/staff_trusted_devices?id=eq.${encodeURIComponent(device.id)}`, { method: 'PATCH', body: { last_used_at: new Date().toISOString() }, prefer: 'return=minimal' }) } catch { /* cosmetic */ }
+        loginFailures.delete(lockKey)
+        await audit(req, 'staff.login', { actor: session.user, actorName: profile.display_name, detail: { mfa: 'remembered-device' } })
+        return res.json({ accessToken: ticket, email: session.user.email, displayName: profile.display_name, username: profile.username, deviceRemembered: true, expiresIn: Number(session.expires_in) || 3600 })
+      }
       if (verified) return res.json({ mfa: { step: 'verify', ticket, factorId: verified.id } })
       for (const stale of (session.user.factors ?? []).filter((factor) => factor.status !== 'verified')) {
         try { await supabase(`/auth/v1/factors/${encodeURIComponent(stale.id)}`, { key: anonKey, token: ticket, method: 'DELETE' }) } catch { /* best effort */ }
@@ -679,7 +728,7 @@ app.post('/api/staff/login', async (req, res) => {
 // Second step of staff sign-in: check the 6-digit authenticator code.
 app.post('/api/staff/mfa/verify', async (req, res) => {
   if (!requireConfig(res)) return
-  const { ticket, factorId, code } = req.body || {}
+  const { ticket, factorId, code, rememberDevice = false } = req.body || {}
   if (typeof ticket !== 'string' || ticket.length > 4096 || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(ticket)
     || typeof factorId !== 'string' || !uuidPattern.test(factorId)
     || typeof code !== 'string' || !/^\d{6}$/.test(code.trim())) {
@@ -712,7 +761,21 @@ app.post('/api/staff/mfa/verify', async (req, res) => {
   let profile = null
   try { profile = await loadStaffProfile(user.id) } catch { /* name is cosmetic; sign-in still succeeds */ }
   await audit(req, 'staff.login', { actor: session.user ?? user, actorName: profile?.display_name, detail: { mfa: true } })
-  res.json({ accessToken: session.access_token, email: session.user?.email ?? user.email, displayName: profile?.display_name ?? null, username: profile?.username ?? null, expiresIn: Number(session.expires_in) || 3600 })
+  let deviceRemembered = false
+  if (rememberDevice === true) {
+    const token = crypto.randomBytes(32).toString('base64url')
+    const expiresAt = new Date(Date.now() + trustedDeviceDays * 86_400_000)
+    try {
+      await supabase('/rest/v1/staff_trusted_devices', {
+        method: 'POST', prefer: 'return=minimal',
+        body: { user_id: user.id, token_hash: sha256(token), label: describeDevice(req), expires_at: expiresAt.toISOString() },
+      })
+      setTrustedDeviceCookie(res, token, trustedDeviceDays * 86_400)
+      deviceRemembered = true
+      await audit(req, 'device.trust', { actor: session.user ?? user, actorName: profile?.display_name, entityType: 'device', detail: { device: describeDevice(req), days: trustedDeviceDays } })
+    } catch { /* Sign-in still succeeds; the code will simply be asked again next time. */ }
+  }
+  res.json({ deviceRemembered, accessToken: session.access_token, email: session.user?.email ?? user.email, displayName: profile?.display_name ?? null, username: profile?.username ?? null, expiresIn: Number(session.expires_in) || 3600 })
 })
 
 // Append-only record of staff actions (migration 005). Never blocks the action
@@ -746,7 +809,24 @@ app.post('/api/staff/logout', requireStaff, async (req, res) => {
   res.json({ ok: true })
 })
 
-app.get('/api/staff/me', requireStaff, (req, res) => res.json({ email: req.staffUser.email, displayName: req.staffProfile.display_name, username: req.staffProfile.username }))
+app.get('/api/staff/me', requireStaff, (req, res) => res.json({ email: req.staffUser.email, displayName: req.staffProfile.display_name, username: req.staffProfile.username, deviceRemembered: Boolean(req.trustedDevice) }))
+
+// Stop remembering this browser (or every browser, with {"scope":"all"}).
+app.post('/api/staff/devices/forget', requireStaff, async (req, res) => {
+  const all = req.body?.scope === 'all'
+  const filter = all
+    ? `user_id=eq.${encodeURIComponent(req.staffUser.id)}&revoked_at=is.null`
+    : (() => {
+      const token = readCookie(req, trustedDeviceCookie)
+      return /^[A-Za-z0-9_-]{43}$/.test(token) ? `token_hash=eq.${sha256(token)}&user_id=eq.${encodeURIComponent(req.staffUser.id)}&revoked_at=is.null` : null
+    })()
+  try {
+    if (filter) await supabase(`/rest/v1/staff_trusted_devices?${filter}`, { method: 'PATCH', body: { revoked_at: new Date().toISOString() }, prefer: 'return=minimal' })
+  } catch { return res.status(502).json({ error: 'The device could not be forgotten. Please try again.' }) }
+  setTrustedDeviceCookie(res, '', 0)
+  await audit(req, 'device.forget', { entityType: 'device', detail: { scope: all ? 'all' : 'this-device' } })
+  res.json({ ok: true })
+})
 app.get('/api/staff/vacancies', requireStaff, async (_req, res) => {
   try {
     const rows = await supabase('/rest/v1/vacancies?select=*&order=created_at.desc')

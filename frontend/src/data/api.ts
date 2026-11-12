@@ -6,6 +6,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}/api${path}`, {
+      // Staff calls carry the HttpOnly "remembered device" cookie, including when the API is on another origin.
+      credentials: path.startsWith('/staff/') ? 'include' : 'same-origin',
       ...options,
       headers: { 'Content-Type': 'application/json', ...options.headers },
     })
@@ -33,16 +35,18 @@ export const verifyPaystackPayment = (reference: string) =>
   request<{ paid: true; message: string }>('/payments/paystack/verify', {
     method: 'POST', body: JSON.stringify({ reference }),
   })
-export type StaffSession = { accessToken: string; email: string; displayName?: string | null; username?: string | null; expiresIn?: number }
+export type StaffSession = { accessToken: string; email: string; displayName?: string | null; username?: string | null; deviceRemembered?: boolean; expiresIn?: number }
 export type StaffMfaStep = { step: 'enroll' | 'verify'; ticket: string; factorId: string; qrCode?: string | null; secret?: string | null }
 export const staffLogin = (username: string, password: string) =>
   request<StaffSession & { mfa?: undefined } | { mfa: StaffMfaStep; accessToken?: undefined }>('/staff/login', {
     method: 'POST', body: JSON.stringify({ username, password }),
   })
-export const verifyStaffMfa = (ticket: string, factorId: string, code: string) =>
+export const verifyStaffMfa = (ticket: string, factorId: string, code: string, rememberDevice = false) =>
   request<StaffSession>('/staff/mfa/verify', {
-    method: 'POST', body: JSON.stringify({ ticket, factorId, code }),
+    method: 'POST', body: JSON.stringify({ ticket, factorId, code, rememberDevice }),
   })
+export const forgetStaffDevice = (scope: 'this' | 'all' = 'this') =>
+  request<{ ok: true }>('/staff/devices/forget', { method: 'POST', headers: staffHeaders(), body: JSON.stringify({ scope }) })
 
 // The staff token lives in sessionStorage (cleared when the tab closes), never
 // localStorage, and is discarded as soon as it expires or the server rejects it.
@@ -77,7 +81,7 @@ export function saveStaffToken(token: string | null, expiresInSeconds = 3600) {
 const staffHeaders = () => ({ Authorization: `Bearer ${getStaffToken() ?? ''}` })
 export const getStaffVacancies = () => request<{ vacancies: Vacancy[] }>('/staff/vacancies', { headers: staffHeaders() })
 export const staffLogout = () => request<{ ok: true }>('/staff/logout', { method: 'POST', headers: staffHeaders(), body: '{}' })
-export const getStaffIdentity = () => request<{ email: string; displayName: string | null; username: string | null }>('/staff/me', { headers: staffHeaders() })
+export const getStaffIdentity = () => request<{ email: string; displayName: string | null; username: string | null; deviceRemembered?: boolean }>('/staff/me', { headers: staffHeaders() })
 
 export type StaffInquiry = {
   id: string

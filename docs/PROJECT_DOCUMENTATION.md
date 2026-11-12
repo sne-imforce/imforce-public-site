@@ -188,7 +188,7 @@ sequenceDiagram
 ├── backend/
 │   ├── server.js                   Express API (routes, validation, Paystack, staff auth)
 │   ├── security.js                 Intrusion detection: honeypots, scoring, blocking, alerts
-│   ├── migrations/                 Supabase SQL (run in order 001 → 006)
+│   ├── migrations/                 Supabase SQL (run in order 001 → 007)
 │   ├── test/                       node:test security regression suite (mocks all services)
 │   └── .env.example                Configuration template (no secrets)
 └── frontend/
@@ -277,8 +277,9 @@ Every staff response is sent with `Cache-Control: no-store`.
 | Method & path | Purpose | Rate limit |
 |---|---|---|
 | `POST /api/staff/login` | Step 1: `{username,password}`. The API looks up the agent's profile and authenticates with the email on file, so staff never type their email. Unknown usernames get the same message **and the same response time (at least 600 ms)** as a wrong password, so usernames cannot be discovered. Responses include `displayName`. With MFA on (the default) it returns `{mfa:{step:'enroll'\|'verify', ticket, factorId, qrCode?, secret?}}` and **no usable session**. A wrong password and a non-staff account get the **same** 401 message. The account locks for 15 minutes after 5 failures. | 5 / IP / min |
-| `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code}` (6 digits) → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
+| `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code, rememberDevice?}` (6 digits). With `rememberDevice: true` it sets an HttpOnly, `SameSite=Strict` cookie (`Path=/api/staff`, 30 days) so that browser needs only the password next time → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
+| `POST /api/staff/devices/forget` | Stop remembering this browser (`{}`) or every browser for the account (`{"scope":"all"}`) | 60 |
 | `GET /api/staff/audit` | Latest 500 staff audit log entries (searched and paged in the browser) | 60 |
 | `GET /api/staff/me` | Current agent: `{email, displayName, username}` | 60 |
 | `GET /api/staff/vacancies` | All vacancies, including client names | 60 |
@@ -303,6 +304,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `004_security_hardening.sql` | Hides `client_name` from the public; hides expired roles in RLS; CHECK limits; `updated_at` trigger; unique payment reference; `security_events` table and 180-day purge function; safer default privileges |
 | `005_staff_audit_log.sql` | Append-only `staff_audit_log`: the API may only insert and read, and triggers block UPDATE, DELETE and TRUNCATE even for the table owner |
 | `006_staff_usernames.sql` | `staff_profiles.username` (unique, lowercase, 3–32 characters) and `display_name` (the agent's name shown in the workspace); existing staff are given usernames and names from their email automatically; `staff_audit_log.actor_name` |
+| `007_staff_trusted_devices.sql` | `staff_trusted_devices` for \"Remember this device for 30 days\": stores only the SHA-256 hash of the device token, has a 31-day maximum, can be revoked but not deleted, and RLS hides it; adds the `device.trust` and `device.forget` audit actions |
 
 ### Tables
 
@@ -313,6 +315,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `contact_inquiries` | Contact form submissions (personal information) | None |
 | `employer_inquiries` | Job order `details` JSONB, including payment status and reference (personal and company information) | None |
 | `security_events` | Intrusion-detection audit trail | None |
+| `staff_trusted_devices` | Remembered browsers for two-step sign-in (token hash, device label, expiry, revoked flag) | None |
 | `staff_audit_log` | Who did what: sign-in and sign-out, viewing enquiries, vacancy create, update (changed fields) and delete (snapshot) | None. Append-only. |
 
 The API uses the **service-role key** for writes and staff reads, and the **anon key** for the public vacancy listing. Both keys stay on the server.
@@ -331,7 +334,7 @@ The security controls are listed by threat in the OWASP Top 10 (2021) table belo
 | A04 Insecure design | Payment fraud, mass assignment | Server-side amount, currency and email verification; whitelisted job-order fields (a client cannot send `paymentStatus:"paid"`); random UUID references |
 | A05 Misconfiguration | Verbose errors, open CORS | Helmet; `x-powered-by` off; CORS allowlist; generic error bodies; JSON 404s; fail-closed production config checks |
 | A06 Vulnerable components | Dependency vulnerabilities | `npm audit --audit-level=high` in CI; CodeQL |
-| A07 Authentication failures | Stolen passwords, brute force, credential stuffing, account enumeration | **Mandatory TOTP two-factor sign-in for staff** (AAL2 enforced on every staff route); 5 tries per IP per minute; 5 failures per account (password or code) → 15-minute lock across all IPs; identical error messages; non-staff sessions revoked; server-side logout; 15-minute idle timeout |
+| A07 Authentication failures | Stolen passwords, brute force, credential stuffing, account enumeration | **Mandatory TOTP two-factor sign-in for staff** (AAL2 enforced on every staff route, except from a browser the same staff member chose to remember: a random 256-bit token in an HttpOnly, SameSite=Strict cookie, stored only as a hash, valid for 30 days, revocable); 5 tries per IP per minute; 5 failures per account (password or code) → 15-minute lock across all IPs; identical error messages; non-staff sessions revoked; server-side logout; 15-minute idle timeout |
 | A08 Data integrity | Forged payment webhook | HMAC-SHA512 signature check (legacy and timestamped modes, 5-minute replay window) |
 | A09 Logging and monitoring failures | Attacks or insider misuse going unnoticed | Structured security and access logs, `security_events` table, alert webhook (see §11), append-only `staff_audit_log` |
 | A10 SSRF | — | The API calls only fixed hosts (Supabase, Paystack, alert URL from configuration) |
@@ -417,7 +420,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 
 ## 13. Local development
 
-Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–006 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
+Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–007 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
 
 ```bash
 cd backend && cp .env.example .env   # then fill in the values
@@ -478,7 +481,7 @@ The hosting choice is still open (the scope compares xneelo, Hostinger and other
 1. **Frontend**: static hosting of `frontend/dist` with SPA fallback (all paths → `index.html`), HTTPS, and the headers in `public/_headers`.
 2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`. Start it with `npm start`. It shuts down gracefully on SIGTERM and writes JSON access, security and error logs to stdout for the host to collect.
 3. **Routing**: either the same origin (`/api/*` reverse-proxied to the API) or a separate API origin set in `VITE_API_BASE_URL`.
-4. **Supabase**: run migrations 001 → 006, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
+4. **Supabase**: run migrations 001 → 007, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
 5. **Paystack**: webhook `https://<api-host>/api/payments/paystack/webhook`; test mode end to end before switching to live keys.
 6. **Alerts**: create a Slack or Teams incoming webhook in a monitored channel and set `SECURITY_ALERT_WEBHOOK_URL`.
 
@@ -529,6 +532,17 @@ Use Supabase scheduled backups or PITR. **Run a restore drill to a scratch proje
 2. In Supabase, go to **Authentication → Users**, open the user, and delete their MFA factor. (Or run SQL `delete from auth.mfa_factors where user_id = '<uuid>';` in the SQL editor.)
 3. On their next sign-in they are shown a new QR code to set up.
 4. If the phone may be in someone else's hands, reset their password at the same time.
+
+### 17.7a Lost or stolen laptop (remembered device)
+
+A remembered laptop still needs the staff member's password, but it skips the authenticator code. Revoke it straight away:
+
+```sql
+update public.staff_trusted_devices set revoked_at = now()
+where user_id = '<uuid>' and revoked_at is null;
+```
+
+Then reset their password. Staff can also do this themselves: **Forget this device** in the workspace header revokes that browser, and the API accepts `{"scope":"all"}` to revoke every browser.
 
 ### 17.8 Check who changed or deleted something
 

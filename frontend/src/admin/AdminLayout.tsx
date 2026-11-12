@@ -3,7 +3,7 @@ import { FiActivity, FiGrid, FiHome, FiLogOut, FiPlusSquare } from 'react-icons/
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import {
   getStaffIdentity, getStaffInquiries, getStaffToken, getStaffTokenExpiry, onStaffSessionExpired,
-  saveStaffToken, staffLogout, type StaffInquiry, type StaffSession,
+  forgetStaffDevice, saveStaffToken, staffLogout, type StaffInquiry, type StaffSession,
 } from '../data/api'
 import { loadStaffVacancies } from '../data/recruiterVacancies'
 import AdminLogin from './AdminLogin'
@@ -29,6 +29,7 @@ export default function AdminLayout() {
   const [inquiries, setInquiries] = useState<StaffInquiry[]>([])
   const [inquiriesError, setInquiriesError] = useState('')
   const [snackbar, setSnackbar] = useState('')
+  const [deviceRemembered, setDeviceRemembered] = useState(false)
 
   const reloadInquiries = useCallback(async () => {
     setInquiriesError('')
@@ -52,6 +53,7 @@ export default function AdminLayout() {
       .then(async (identity) => {
         await loadStaffVacancies()
         setStaffName(identity.displayName || identity.email)
+        setDeviceRemembered(Boolean(identity.deviceRemembered))
         await reloadInquiries()
       })
       .catch(() => saveStaffToken(null))
@@ -94,7 +96,18 @@ export default function AdminLayout() {
     await loadStaffVacancies()
     setNotice('')
     setStaffName(session.displayName || session.email)
+    setDeviceRemembered(Boolean(session.deviceRemembered))
     await reloadInquiries()
+  }
+
+  const forgetDevice = async () => {
+    try {
+      await forgetStaffDevice()
+      setDeviceRemembered(false)
+      setSnackbar('This device is no longer remembered. You’ll be asked for a code next time.')
+    } catch (error) {
+      setSnackbar(error instanceof Error ? error.message : 'The device could not be forgotten.')
+    }
   }
 
   const signOut = async () => {
@@ -126,6 +139,12 @@ export default function AdminLayout() {
           <div>
             <p className="staff-access-eyebrow">Recruiter workspace</p>
             <p className="admin__signed-in">Signed in as <strong>{staffName}</strong></p>
+            {deviceRemembered && (
+              <p className="admin__device">
+                This device is remembered for two-step sign-in.{' '}
+                <button type="button" onClick={() => { void forgetDevice() }}>Forget this device</button>
+              </p>
+            )}
           </div>
           <div className="admin__header-actions">
             <Link className="admin__button" to="/"><FiHome aria-hidden="true" /> Home</Link>

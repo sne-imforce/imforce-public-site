@@ -753,3 +753,20 @@
     flex-direction: column-reverse;
   }
 }
+
+.admin__device {
+  margin: 2px 0 0;
+  color: var(--color-muted);
+  font: 500 12px/1.5 var(--font-interface);
+}
+
+.admin__device button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}

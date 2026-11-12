@@ -131,12 +131,13 @@ async function stubApi(page, opts = {}) {
   // Two-step (MFA) staff sign-in
   {
     const page = await browser.newPage()
-    let verifyCalls = 0
+    let verifyCalls = 0; let forgetCalls = 0; let lastVerify = null
     await page.route('**/api/**', async (route) => {
       const p = new URL(route.request().url()).pathname
       const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
       if (p === '/api/staff/login') return json({ mfa: { step: 'enroll', ticket: 'a.b.c', factorId: '11111111-1111-4111-8111-111111111111', qrCode: 'data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E', secret: 'JBSWY3DPEHPK3PXP' } })
-      if (p === '/api/staff/mfa/verify') { verifyCalls += 1; return route.request().postDataJSON().code === '123456' ? json({ accessToken: 'x.y.z', email: 'staff@imforce.co.za', expiresIn: 3600 }) : json({ error: 'That code is not correct. Codes change every 30 seconds, so check your authenticator app and try again.' }, 401) }
+      if (p === '/api/staff/devices/forget') { forgetCalls += 1; return json({ ok: true }) }
+      if (p === '/api/staff/mfa/verify') { verifyCalls += 1; lastVerify = route.request().postDataJSON(); return route.request().postDataJSON().code === '123456' ? json({ accessToken: 'x.y.z', email: 'staff@imforce.co.za', displayName: 'Thandi Mokoena', deviceRemembered: lastVerify.rememberDevice === true, expiresIn: 3600 }) : json({ error: 'That code is not correct. Codes change every 30 seconds, so check your authenticator app and try again.' }, 401) }
       if (p === '/api/staff/inquiries') return json({ inquiries: [] })
       return json({ vacancies: [] })
     })
@@ -149,9 +150,17 @@ async function stubApi(page, opts = {}) {
     ok('MFA: QR code and setup key shown', await page.locator('img.staff-mfa__qr').count() === 1 && await page.getByText('JBSWY3DPEHPK3PXP').isVisible())
     await page.fill('input[name="code"]', '000000'); await page.click('button.staff-access-submit'); await page.getByRole('alert').waitFor()
     ok('MFA: wrong code keeps the user on the code step', await page.locator('input[name="code"]').count() === 1)
+    ok('MFA: "remember this device" is offered and off by default', await page.getByLabel(/Remember this device for 30 days/).isVisible() && !(await page.getByLabel(/Remember this device for 30 days/).isChecked()))
+    ok('MFA: shared-computer warning shown', await page.getByText('Don’t tick this on a shared or public computer.').isVisible())
+    await page.getByLabel(/Remember this device for 30 days/).check()
     await page.fill('input[name="code"]', '123 456'); await page.click('button.staff-access-submit')
     await page.getByRole('heading', { name: 'Inventory' }).waitFor()
     ok('MFA: correct code (with a space) signs in', verifyCalls === 2)
+    ok('MFA: ticking the box asks the server to remember the device', lastVerify?.rememberDevice === true)
+    ok('MFA: header says the device is remembered', await page.getByText('This device is remembered for two-step sign-in.').isVisible())
+    await page.getByRole('button', { name: 'Forget this device' }).click()
+    await page.getByText('This device is no longer remembered').waitFor()
+    ok('MFA: "Forget this device" calls the API and hides the note', forgetCalls === 1 && !(await page.getByText('This device is remembered for two-step sign-in.').isVisible()))
     await page.close()
   }
   await browser.close()

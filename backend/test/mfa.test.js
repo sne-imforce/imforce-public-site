@@ -82,3 +82,4 @@ test('the code step shares the strict sign-in rate limit', async () => {
   // Either the rate limiter (429) or the alarm system's IP block (403) must stop it.
   assert.ok([403, 429].includes(last.status), `got ${last.status}`)
 })
+

@@ -52,6 +52,17 @@ Staff now sign in with a **username** instead of their email, and the workspace 
 
 `npm run staff:create` adds an agent with name, username, email and a hidden password, and rolls back on failure. Testing found and fixed a defect in that tool before release: with piped input it exited *successfully* without creating anything. A full-rule accessibility audit also found a long-standing label mismatch on the footer logo link (WCAG 2.5.3, all pages), which is now fixed.
 
+### Round 5 (12 November 2026): convenience and polish
+
+- **"Remember this device for 30 days"** makes two-step sign-in practical for daily use without weakening it for attackers:
+  - Off by default, with a warning against ticking it on shared computers.
+  - A remembered browser skips only the authenticator code; the password is always required.
+  - Every other browser still needs the code. A password-only session presented from any other browser is refused.
+  - The token is 256 bits, kept in an HttpOnly, SameSite=Strict cookie scoped to `/api/staff`, and stored only as a SHA-256 hash.
+  - It works only for the account that set it, has a 31-day maximum enforced by the database, and is revocable by the staff member or an admin. Remembering and forgetting are audited.
+- **Contact confirmation:** a bold, personal confirmation panel with a reference number and next steps, and a distinct red error alert with a phone fallback.
+- **Loading spinners:** accessible spinners replace blank areas while content loads, plus inline spinners in busy buttons.
+
 ---
 
 ## 2. Findings and remediation
@@ -171,9 +182,10 @@ All results were reproduced in the final QA pass. Commands:
 
 | Layer | Command | Result |
 |---|---|---|
-| API and security unit/integration | `cd backend && npm test` | **51 / 51 passed** (including 8 MFA, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
-| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **37 / 37 passed**; migrations 001–006 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
-| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **75 / 75 passed** |
+| API and security unit/integration | `cd backend && npm test` | **60 / 60 passed** (including 8 MFA, 9 remembered-device, 2 audit-log, 4 username sign-in and 5 staff-creation tool tests) |
+| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **44 / 44 passed**; migrations 001–007 re-run safely; 006 username backfill (duplicates, short and odd email prefixes) |
+| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **86 / 86 passed** |
+| Loading states (API deliberately slowed) | `node qa/e2e-loading.cjs` | **9 / 9 passed** |
 | Staff workspace E2E (27 job posts, 23 enquiries, 60 audit entries) | `node qa/e2e-admin.cjs` against `vite preview` | **45 / 45 passed**: agent name in header, tabs, paging, search, sort, filters, expand, edit, delete confirmation modal, deep links, phone card layout |
 | Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 public routes and 3 signed-in admin screens × desktop and mobile | **0 violations** |
 | Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |
@@ -188,7 +200,7 @@ Test design notes: the API suite mocks Supabase, Paystack and the alert webhook 
 
 ## 6. Release conditions (go-live checklist)
 
-- [ ] Run `backend/migrations/004_security_hardening.sql`, `005_staff_audit_log.sql` and `006_staff_usernames.sql` on Supabase, then check the generated usernames (`select username, display_name from staff_profiles`) and tell each agent their username. The API works without them, but **client names stay exposed to the anon key until 004 runs** (QA-02), and the security and audit trails need both.
+- [ ] Run `backend/migrations/004_security_hardening.sql`, `005_staff_audit_log.sql`, `006_staff_usernames.sql` and `007_staff_trusted_devices.sql` on Supabase, then check the generated usernames (`select username, display_name from staff_profiles`) and tell each agent their username. The API works without them, but **client names stay exposed to the anon key until 004 runs** (QA-02), and the security and audit trails need both.
 - [ ] Check that MFA (TOTP) is enabled in Supabase (**Authentication → Multi-Factor**) and that `STAFF_MFA_REQUIRED` is **not** set to `false`. Each staff member then sets up their authenticator on their next sign-in. Do a test sign-in on staging first.
 - [ ] Delete the old scope `.docx` from the live web host (QA-03).
 - [ ] Configure the security headers on the chosen host (`public/_headers` or an equivalent).

@@ -43,6 +43,7 @@ const state = {
   calls: [], alerts: [], events: [], contacts: [], employers: [], vacancies: [], audit: [],
   paystackTransaction: null,
   factors: [],
+  devices: [],
 }
 
 function json(body, status = 200) {
@@ -102,6 +103,17 @@ globalThis.fetch = async (input, init = {}) => {
       return row ? json({ id: row.user_id, email: row.email }) : json({ message: 'User not found' }, 404)
     }
     if (url.pathname === '/rest/v1/security_events') { state.events.push(body); return json(undefined, 201) }
+    if (url.pathname === '/rest/v1/staff_trusted_devices') {
+      const eq = (name) => url.searchParams.get(name)?.replace(/^eq\./, '')
+      const matches = (row) => (!eq('id') || row.id === eq('id'))
+        && (!eq('token_hash') || row.token_hash === eq('token_hash'))
+        && (!eq('user_id') || row.user_id === eq('user_id'))
+        && (url.searchParams.get('revoked_at') !== 'is.null' || !row.revoked_at)
+        && (!url.searchParams.get('expires_at') || row.expires_at > url.searchParams.get('expires_at').slice(3))
+      if (method === 'POST') { state.devices.push({ id: crypto.randomUUID(), ...body }); return json(undefined, 201) }
+      if (method === 'PATCH') { state.devices.filter(matches).forEach((row) => Object.assign(row, body)); return json(undefined, 204) }
+      return json(state.devices.filter(matches).map(({ id }) => ({ id })))
+    }
     if (url.pathname === '/rest/v1/staff_audit_log') {
       if (method === 'POST') { state.audit.push(body); return json(undefined, 201) }
       return json([...state.audit].reverse())

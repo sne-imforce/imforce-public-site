@@ -62,4 +62,11 @@ deny "duplicate username rejected" "update public.staff_profiles set username = 
 deny "username with spaces or capitals rejected" "update public.staff_profiles set username = 'Thandi M' where user_id = 'a0000000-0000-4000-8000-000000000003';" "check constraint"
 deny "staff profile without a name rejected" "update public.staff_profiles set display_name = ' ' where user_id = 'a0000000-0000-4000-8000-000000000003';" "check constraint"
 deny "anon cannot read usernames" "set role anon; select username from public.staff_profiles;" "permission denied"
+deny "anon cannot read trusted devices" "set role anon; select 1 from public.staff_trusted_devices;" "permission denied"
+deny "authenticated cannot read trusted devices" "set role authenticated; select 1 from public.staff_trusted_devices;" "permission denied"
+deny "trusted device must store a SHA-256 hash, not a raw token" "insert into public.staff_trusted_devices(user_id, token_hash, expires_at) values ('a0000000-0000-4000-8000-000000000001', 'raw-token-value', now() + interval '1 day');" "check constraint"
+deny "trusted device cannot be remembered for more than 31 days" "insert into public.staff_trusted_devices(user_id, token_hash, expires_at) values ('a0000000-0000-4000-8000-000000000001', repeat('a', 64), now() + interval '90 days');" "check constraint"
+ok   "service_role can remember a device" "1" "set role service_role; insert into public.staff_trusted_devices(user_id, token_hash, expires_at) values ('a0000000-0000-4000-8000-000000000001', md5(random()::text) || md5(random()::text), now() + interval '30 days') returning 1;"
+deny "service_role cannot delete device history (revoke instead)" "set role service_role; delete from public.staff_trusted_devices;" "permission denied"
+ok   "audit log accepts device.trust / device.forget" "2" "set role service_role; insert into public.staff_audit_log(action) values ('device.trust'), ('device.forget'); select count(*) from (select 1 from public.staff_audit_log where action in ('device.trust','device.forget') order by id desc limit 2) x;"
 echo; [ $fails -eq 0 ] && echo "All database checks passed." || { echo "$fails database check(s) failed."; exit 1; }
