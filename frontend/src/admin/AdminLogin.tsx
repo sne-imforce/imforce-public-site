@@ -75,13 +75,12 @@ export default function AdminLogin({ notice, onSignedIn }: Props) {
               <h2>Set up two-step sign-in</h2>
               <ol>
                 <li>Open an authenticator app on your phone (for example Microsoft Authenticator or Google Authenticator).</li>
-                <li>Scan this QR code, or type the setup key into the app.</li>
+                <li>{mfaStep.qrCode ? 'Scan this QR code, or type the setup key into the app.' : 'Add a new account in the app and type in the setup key below.'}</li>
                 <li>Enter the 6-digit code the app shows.</li>
               </ol>
-              {mfaStep.qrCode ? (
+              {/* Without a QR code the setup key alone is offered; no mention of a QR code. */}
+              {mfaStep.qrCode && (
                 <img className="staff-mfa__qr" src={mfaStep.qrCode} alt="QR code to scan with your authenticator app" width={200} height={200} />
-              ) : (
-                <p className="staff-mfa__secret">The QR code could not be shown. Add the account in your app with the setup key below instead.</p>
               )}
               {mfaStep.uri?.startsWith('otpauth://totp/') && (
                 <a className="staff-mfa__open-app" href={mfaStep.uri}>Setting up on this phone? Open in your authenticator app</a>

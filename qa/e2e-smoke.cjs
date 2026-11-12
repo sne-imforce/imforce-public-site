@@ -163,6 +163,18 @@ async function stubApi(page, opts = {}) {
     ok('MFA: "Forget this device" calls the API and hides the note', forgetCalls === 1 && !(await page.getByText('This device is remembered for two-step sign-in.').isVisible()))
     await page.close()
   }
+  // MFA setup when no QR code is available: offer the setup key only, never mention a QR code
+  {
+    const page = await browser.newPage()
+    await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(route.request().url().includes('/staff/login')
+      ? { mfa: { step: 'enroll', ticket: 'a.b.c', factorId: '11111111-1111-4111-8111-111111111111', qrCode: null, secret: 'JBSWY3DPEHPK3PXP', uri: null } } : { vacancies: [] }) }))
+    await page.goto(BASE + '/admin')
+    await page.fill('input[name="username"]', 'thandi.mokoena'); await page.fill('input[name="password"]', 'pw'); await page.click('button.staff-access-submit')
+    await page.getByText('Set up two-step sign-in').waitFor()
+    const text = await page.locator('.staff-access-panel').innerText()
+    ok('MFA without a QR code: no QR option or message, setup key offered', !/QR/i.test(text) && text.includes('JBSWY3DPEHPK3PXP') && await page.locator('img.staff-mfa__qr').count() === 0)
+    await page.close()
+  }
   await browser.close()
   const failed = results.filter((r) => !r.pass)
   console.log(`\n${results.length - failed.length}/${results.length} passed`)
