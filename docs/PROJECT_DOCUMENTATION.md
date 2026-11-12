@@ -6,7 +6,7 @@
 | **Owner** | IMFORCE Talent Recruitment |
 | **Repository** | `sne-imforce/imforce-public-site` |
 | **Document status** | Living document. Update it in the same pull request as any change it describes. |
-| **Last reviewed** | November 2026 (QA and secure-SDLC review, see [QA_SECURITY_REVIEW.md](./QA_SECURITY_REVIEW.md)) |
+| **Last reviewed** | 12 November 2026 (QA and secure-SDLC review, round 2; see [QA_SECURITY_REVIEW.md](./QA_SECURITY_REVIEW.md)) |
 
 ---
 
@@ -72,12 +72,11 @@ The authoritative business scope is the internal document
 | Careers search and filters (keyword, location, industry, category, employment type), vacancy detail, "Apply on Nexora AI" link | **Built** |
 | Contact form → database | **Built** |
 | Employer job order → **Paystack** checkout (R499) → payment verification and webhook | **Built**. Paystack replaces the PayPod/NetCash proposal; IMFORCE must approve this change of scope. |
-| Staff dashboard at `/admin`: sign-in, create, edit and delete vacancies, read recent enquiries | **Built** |
-| Intrusion detection: honeypots, threat scoring, IP blocking, alerting | **Built** (this review) |
+| Staff dashboard at `/admin`: sign-in with **two-factor authentication**, create, edit and delete vacancies, enquiry inbox with payment status, staff activity log | **Built** |
+| Intrusion detection: honeypots, threat scoring, IP blocking, alerting | **Built** |
+| Append-only staff audit log | **Built** |
+| Privacy notice (POPIA) at `/privacy` | **Built**. IMFORCE should have it reviewed by whoever handles its legal and POPIA matters. |
 | Employer accounts, email OTP, agreement e-signature and versioning, client dashboard, advert-approval workflow and audit, candidate submissions, Talent One sync, Nexora outage queue, document-assisted job-order entry, email notifications | **Not built**. These are release blockers listed in [`PRODUCTION_READINESS.md`](../PRODUCTION_READINESS.md). |
-| Empty placeholder files: `pages/internal site/*`, `Services.tsx`, `Privacy Policy.tsx`, `Credentials.tsx`, `Hire Talent.tsx` | Placeholders with no content |
-
-> ⚠️ **A privacy policy page is required before go-live** (POPIA). The site collects names, emails, phone numbers and company data, and `Privacy Policy.tsx` is empty.
 
 ---
 
@@ -90,7 +89,7 @@ The authoritative business scope is the internal document
 | Routing | react-router-dom | 7.x | `BrowserRouter`, client-side routes |
 | Build tool | Vite | 8.x | Also injects the production CSP (see `vite.config.ts`) |
 | Icons | react-icons | 5.x | Inline SVG, no external icon CDN |
-| State | `useSyncExternalStore` stores | — | `@reduxjs/toolkit` is installed but **unused**; remove it or start using it |
+| State | `useSyncExternalStore` stores | — | Small hand-written stores; no state library is needed |
 | Linting | ESLint 10 + typescript-eslint + react-hooks | — | `npm run lint` |
 | Backend runtime | Node.js | ≥ 20 (CI uses 22) | Uses the built-in `fetch`, `AbortSignal.timeout` and `node:test` |
 | Web framework | Express | 5.x | Async errors handled natively |
@@ -180,6 +179,8 @@ sequenceDiagram
 ├── .github/workflows/ci.yml        CI: audit, lint, build, tests, secret scan, CodeQL
 ├── README.md                       Quick start
 ├── PRODUCTION_READINESS.md         Release blockers and deployment checklist
+├── .github/dependabot.yml          Weekly dependency update pull requests
+├── qa/                             Browser E2E (Playwright) and database permission test scripts
 ├── docs/
 │   ├── PROJECT_DOCUMENTATION.md    This document
 │   ├── QA_SECURITY_REVIEW.md       QA / security findings, evidence and sign-off
@@ -187,7 +188,7 @@ sequenceDiagram
 ├── backend/
 │   ├── server.js                   Express API (routes, validation, Paystack, staff auth)
 │   ├── security.js                 Intrusion detection: honeypots, scoring, blocking, alerts
-│   ├── migrations/                 Supabase SQL (run in order 001 → 004)
+│   ├── migrations/                 Supabase SQL (run in order 001 → 005)
 │   ├── test/                       node:test security regression suite (mocks all services)
 │   └── .env.example                Configuration template (no secrets)
 └── frontend/
@@ -223,7 +224,8 @@ sequenceDiagram
 | `/certifications` (`/credentials` redirects) | Certifications & credentials | |
 | `/fee-calculator` | Fee calculator | Can prefill the employer form |
 | `/contact` | Contact | `?subject=` prefill; hidden bot-trap field |
-| `/admin` | Staff sign-in and dashboard | `noindex`; idle sign-out after 15 minutes |
+| `/privacy` | Privacy notice (POPIA) | Linked from the footer and both forms |
+| `/admin` | Staff sign-in (password + authenticator code) and dashboard | `noindex`; idle sign-out after 15 minutes |
 | `*` | Falls back to Home | |
 
 ### UX and accessibility conventions
@@ -232,6 +234,7 @@ sequenceDiagram
 - Buttons show a busy state while a request is in flight, which prevents double submission.
 - Error messages are written for end users ("Check your internet connection…") and never contain technical details.
 - The `/admin` link is a small gear icon in the footer, kept out of the main navigation.
+- Accessibility: every page passes an automated axe-core audit (WCAG 2.1 AA and best practices) on desktop and mobile. Accent text uses `--color-accent-text` (#296fb0), which meets 4.5:1 contrast on all light backgrounds; keep using it for text instead of `--color-accent`.
 
 ### Frontend security controls
 
@@ -268,8 +271,10 @@ Every staff response is sent with `Cache-Control: no-store`.
 
 | Method & path | Purpose | Rate limit |
 |---|---|---|
-| `POST /api/staff/login` | `{email,password}` → `{accessToken,email,expiresIn}`. A wrong password and a non-staff account get the **same** 401 message. The account locks for 15 minutes after 5 failures. | 5 / IP / min |
+| `POST /api/staff/login` | Step 1: `{email,password}`. With MFA on (the default) it returns `{mfa:{step:'enroll'\|'verify', ticket, factorId, qrCode?, secret?}}` and **no usable session**. A wrong password and a non-staff account get the **same** 401 message. The account locks for 15 minutes after 5 failures. | 5 / IP / min |
+| `POST /api/staff/mfa/verify` | Step 2: `{ticket, factorId, code}` (6 digits) → `{accessToken,email,expiresIn}` with an AAL2 session. Wrong codes count towards the same lockout. | 5 / IP / min (shared with login) |
 | `POST /api/staff/logout` | Revokes the Supabase session server-side | 60 |
+| `GET /api/staff/audit` | Last 50 staff audit log entries | 60 |
 | `GET /api/staff/me` | Current staff email | 60 |
 | `GET /api/staff/vacancies` | All vacancies, including client names | 60 |
 | `POST /api/staff/vacancies` | Create (published immediately) | 60 |
@@ -277,7 +282,7 @@ Every staff response is sent with `Cache-Control: no-store`.
 | `DELETE /api/staff/vacancies/:id` | Delete (404 if it does not exist) | 60 |
 | `GET /api/staff/inquiries` | Last 100 contact and employer enquiries | 60 |
 
-Staff access requires a Supabase Auth user **and** an `active = true` row in `staff_profiles`.
+Staff access requires a Supabase Auth user, an `active = true` row in `staff_profiles` **and**, unless `STAFF_MFA_REQUIRED=false`, a session that completed the authenticator-code step (`aal2`). Every staff route checks all three.
 
 ---
 
@@ -291,6 +296,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `002_vacancy_urgent.sql` | `is_urgent` column |
 | `003_vacancy_closing_date.sql` | `closing_date` column |
 | `004_security_hardening.sql` | Hides `client_name` from the public; hides expired roles in RLS; CHECK limits; `updated_at` trigger; unique payment reference; `security_events` table and 180-day purge function; safer default privileges |
+| `005_staff_audit_log.sql` | Append-only `staff_audit_log`: the API may only insert and read, and triggers block UPDATE, DELETE and TRUNCATE even for the table owner |
 
 ### Tables
 
@@ -301,6 +307,7 @@ Migrations are in `backend/migrations/` and must be run **in order** in the Supa
 | `contact_inquiries` | Contact form submissions (personal information) | None |
 | `employer_inquiries` | Job order `details` JSONB, including payment status and reference (personal and company information) | None |
 | `security_events` | Intrusion-detection audit trail | None |
+| `staff_audit_log` | Who did what: sign-in and sign-out, viewing enquiries, vacancy create, update (changed fields) and delete (snapshot) | None. Append-only. |
 
 The API uses the **service-role key** for writes and staff reads, and the **anon key** for the public vacancy listing. Both keys stay on the server.
 
@@ -318,9 +325,9 @@ The security controls are listed by threat in the OWASP Top 10 (2021) table belo
 | A04 Insecure design | Payment fraud, mass assignment | Server-side amount, currency and email verification; whitelisted job-order fields (a client cannot send `paymentStatus:"paid"`); random UUID references |
 | A05 Misconfiguration | Verbose errors, open CORS | Helmet; `x-powered-by` off; CORS allowlist; generic error bodies; JSON 404s; fail-closed production config checks |
 | A06 Vulnerable components | Dependency vulnerabilities | `npm audit --audit-level=high` in CI; CodeQL |
-| A07 Authentication failures | Brute force, credential stuffing, account enumeration | 5 tries per IP per minute; 5 failures per account → 15-minute lock across all IPs; identical error messages; non-staff sessions revoked; server-side logout; 15-minute idle timeout |
+| A07 Authentication failures | Stolen passwords, brute force, credential stuffing, account enumeration | **Mandatory TOTP two-factor sign-in for staff** (AAL2 enforced on every staff route); 5 tries per IP per minute; 5 failures per account (password or code) → 15-minute lock across all IPs; identical error messages; non-staff sessions revoked; server-side logout; 15-minute idle timeout |
 | A08 Data integrity | Forged payment webhook | HMAC-SHA512 signature check (legacy and timestamped modes, 5-minute replay window) |
-| A09 Logging and monitoring failures | Attacks going unnoticed | Structured security log, `security_events` table, alert webhook (see §11) |
+| A09 Logging and monitoring failures | Attacks or insider misuse going unnoticed | Structured security and access logs, `security_events` table, alert webhook (see §11), append-only `staff_audit_log` |
 | A10 SSRF | — | The API calls only fixed hosts (Supabase, Paystack, alert URL from configuration) |
 | DoS | Request floods, ReDoS | Per-group rate limits; 32 KB body cap; **linear-time email validation** (a regex let one request block the server for 1.4 s); all regexes in the detector have bounded quantifiers; upstream timeouts |
 | Bots / spam | Form spam | Hidden trap field `extraNotesHp` (named so browser autofill ignores it) on the contact and job-order forms |
@@ -392,6 +399,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 | `SECURITY_ALERT_WEBHOOK_URL` | recommended | **medium** | HTTPS Slack/Teams webhook for alarms |
 | `SECURITY_ALLOWLIST_IPS` | optional | no | IPs that are never blocked |
 | `SECURITY_BLOCK_PRIVATE_IPS` | tests only | no | `true` lets private IPs be blocked (used by the test suite) |
+| `STAFF_MFA_REQUIRED` | no | no | Default **on**. `false` turns off the authenticator-code step (local development only; the API logs a warning). |
 
 ### Frontend (build time)
 
@@ -403,7 +411,7 @@ The block list, scores and login lockouts are **held in the process's memory**. 
 
 ## 13. Local development
 
-Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–004 applied.
+Prerequisites: Node.js 22, npm, and a Supabase project (or test project) with migrations 001–005 applied and MFA (TOTP) enabled under **Authentication → Multi-Factor**. It is on by default in new projects.
 
 ```bash
 cd backend && cp .env.example .env   # then fill in the values
@@ -422,16 +430,19 @@ Create a staff user: in Supabase, go to **Authentication → Users → Add user*
 insert into public.staff_profiles (user_id) values ('<the user's uuid>');
 ```
 
+On their first sign-in, the staff member is shown a QR code to scan with an authenticator app. To run locally without MFA, set `STAFF_MFA_REQUIRED=false` in `backend/.env` (never in production).
+
 ---
 
 ## 14. Testing
 
 | Suite | Command | What it proves |
 |---|---|---|
-| Backend security regression (33 tests) | `cd backend && npm test` | Validation, ReDoS fix, CORS, 413/415, auth and enumeration, account lockout, logout revocation, UUID checks, payment amount/currency/email verification, webhook signatures, mass-assignment protection, rate limits, honeypots, attack detection and blocking, alert throttling, log-injection sanitising, safety valves. Supabase, Paystack and the alert webhook are mocked, so it runs offline. |
+| Backend security regression (43 tests) | `cd backend && npm test` | Two-factor sign-in (enrol, verify, wrong code, lockout, AAL1 refused), audit logging, validation, ReDoS fix, CORS, 413/415, auth and enumeration, account lockout, logout revocation, UUID checks, payment amount/currency/email verification, webhook signatures, mass-assignment protection, rate limits, honeypots, attack detection and blocking, alert throttling, log-injection sanitising, safety valves. Supabase, Paystack and the alert webhook are mocked, so it runs offline. |
 | Frontend lint and type-check | `cd frontend && npm run lint && npm run build` | Static correctness |
-| Database permissions | Run migrations on a scratch Postgres (see QA report §5) | anon cannot read `client_name`, enquiries or security events; constraints; idempotency |
-| Browser end-to-end | Playwright script (see QA report §5) | All routes on desktop and mobile: no CSP violations, no JS errors, no horizontal overflow; contact flow; staff login, logout, expiry; stored-XSS rendering |
+| Database permissions (29 checks) | `qa/db-permissions.sh` on a scratch Postgres (see QA report §5) | anon cannot read `client_name`, enquiries, security events or the audit log; audit log cannot be edited or deleted, even by the owner; constraints; idempotency |
+| Browser end-to-end (73 checks) | `node qa/e2e-smoke.cjs` (see QA report §5) | All routes on desktop and mobile: no CSP violations, no JS errors, no horizontal overflow; contact flow; staff login, two-step sign-in, logout, expiry; stored-XSS rendering |
+| Accessibility | axe-core in Playwright (see QA report §5) | WCAG 2.1 AA and best practices on every page, desktop and mobile: 0 violations |
 
 Recommended next step: commit the Playwright E2E script as a proper `@playwright/test` suite and run it in CI.
 
@@ -457,9 +468,9 @@ Recommended next step: commit the Playwright E2E script as a proper `@playwright
 The hosting choice is still open (the scope compares xneelo, Hostinger and others). Any host that meets these requirements works:
 
 1. **Frontend**: static hosting of `frontend/dist` with SPA fallback (all paths → `index.html`), HTTPS, and the headers in `public/_headers`.
-2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`.
+2. **API**: a Node 22 process behind HTTPS, `NODE_ENV=production`, secrets from the host secret manager, `TRUST_PROXY_HOPS` set to the verified number of proxies, a single instance (or a shared limiter store, see §11), and a health check on `/api/health`. Start it with `npm start`. It shuts down gracefully on SIGTERM and writes JSON access, security and error logs to stdout for the host to collect.
 3. **Routing**: either the same origin (`/api/*` reverse-proxied to the API) or a separate API origin set in `VITE_API_BASE_URL`.
-4. **Supabase**: run migrations 001 → 004, enable MFA for dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
+4. **Supabase**: run migrations 001 → 005, keep MFA (TOTP) enabled under Authentication → Multi-Factor, disable public sign-ups, enable MFA for Supabase dashboard users, enable Point-in-Time Recovery or scheduled backups, and leave `security_events` purge scheduling on (pg_cron).
 5. **Paystack**: webhook `https://<api-host>/api/payments/paystack/webhook`; test mode end to end before switching to live keys.
 6. **Alerts**: create a Slack or Teams incoming webhook in a monitored channel and set `SECURITY_ALERT_WEBHOOK_URL`.
 
@@ -504,20 +515,38 @@ To add: create the Auth user and insert into `staff_profiles`. To remove: `updat
 
 Use Supabase scheduled backups or PITR. **Run a restore drill to a scratch project every quarter** and record the result, as required by scope §9.
 
+### 17.7 A staff member lost their phone (authenticator)
+
+1. Confirm their identity in person or by a known phone number.
+2. In Supabase, go to **Authentication → Users**, open the user, and delete their MFA factor. (Or run SQL `delete from auth.mfa_factors where user_id = '<uuid>';` in the SQL editor.)
+3. On their next sign-in they are shown a new QR code to set up.
+4. If the phone may be in someone else's hands, reset their password at the same time.
+
+### 17.8 Check who changed or deleted something
+
+```sql
+select occurred_at, actor_email, action, detail, ip_address
+from public.staff_audit_log
+where occurred_at > now() - interval '30 days'
+order by occurred_at desc;
+```
+
+The latest 50 entries are also shown in the dashboard under **Recent staff activity**. The log cannot be edited or deleted. That is by design.
+
 ---
 
 ## 18. Known gaps and roadmap
 
 Ordered by risk. See also [`PRODUCTION_READINESS.md`](../PRODUCTION_READINESS.md).
 
-1. **Privacy policy page and POPIA notice** (empty `Privacy Policy.tsx`). The site collects personal information.
-2. **Staff MFA**: enable Supabase Auth MFA for staff accounts and enforce it in the API (check the token's `aal` claim).
-3. **Shared rate-limit and block store plus an edge WAF** before running more than one API instance.
-4. **Role separation**: every active staff member can delete any vacancy and read all enquiries. Add roles (recruiter or admin) and audit logs of staff actions (who created, edited or deleted what).
-5. Employer accounts, email OTP, agreement e-signature, approval workflow, client dashboard, Talent One and Nexora integrations (scope sections 4–8).
-6. Commit the E2E browser suite and run it in CI. Add accessibility checks (axe).
-7. Remove the unused `@reduxjs/toolkit` dependency and the empty placeholder pages.
-8. Resolve the 10 moderate npm advisories in the frontend lint tooling chain (dev-only) when compatible patches are released.
+Done in the November 2026 review: the privacy notice, staff MFA, the staff audit log, dead-code removal and accessibility fixes.
+
+1. **Shared rate-limit and block store plus an edge WAF** before running more than one API instance.
+2. **Role separation**: every active staff member can delete any vacancy and read all enquiries. Every action is now audited, but there is still no recruiter-versus-admin distinction.
+3. Employer accounts, email OTP, agreement e-signature, approval workflow, client dashboard, Talent One and Nexora integrations (scope sections 4–8).
+4. Run the E2E and accessibility scripts in CI (they need a CI job that installs Playwright and serves the build).
+5. Resolve the 10 moderate npm advisories in the frontend lint tooling chain (dev only) when compatible patches are released. Dependabot will propose them.
+6. Rename folders containing spaces (`pages/public site`, `Fee Calculator.tsx`) to kebab-case.
 
 ---
 

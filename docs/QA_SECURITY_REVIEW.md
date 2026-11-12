@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Review date** | 11 November 2026 |
+| **Review dates** | 11 November 2026 (round 1); 12 November 2026 (round 2: production readiness, dead code, UI) |
 | **Branch** | `testingClaudeCode` |
 | **Scope** | Whole repository: React frontend, Express API, Supabase schema, CI pipeline, static assets |
-| **Method** | Manual code review against OWASP Top 10 / ASVS L1, abuse-case analysis ("what can an attacker do, and what can a careless or dishonest user do?"), UX review, plus automated tests at four layers (API, database, browser, CI) |
-| **Verdict** | ✅ **Ready for staging and user-acceptance testing.** ⛔ **Not yet ready for production go-live.** The release conditions are in §6. |
+| **Method** | Manual code review against OWASP Top 10 / ASVS L1, abuse-case analysis ("what can an attacker do, and what can a careless or dishonest user do?"), UX and accessibility review, dead-code analysis, plus automated tests at five layers (API, database, browser, accessibility, CI) |
+| **Verdict** | ✅ **Code is production-ready.** Every code-level release blocker is fixed and tested. ⏳ **Go-live is conditional** on the deployment, configuration and sign-off steps in §6, which need IMFORCE access or an independent tester and cannot be done from the repository. |
 
 ---
 
@@ -22,6 +22,19 @@ The most serious:
 4. **Unlimited password guessing across many IPs.** Brute-force protection counted attempts per IP address only. An attacker spreading guesses across many IPs (credential stuffing) was never stopped.
 
 In addition, an **intrusion-detection "alarm system"** was added, as requested. It covers trap routes, a robots.txt decoy, hidden form traps, threat scoring, automatic temporary blocking, a database audit trail and Slack/Teams alerts (see §4).
+
+### Round 2 (12 November 2026): production readiness
+
+Round 2 closed the two remaining high-severity open items (no privacy notice, password-only staff accounts) and the main medium one (no record of staff actions). It also removed dead code and fixed the UI and accessibility problems found in a page-by-page review:
+
+- **Two-factor sign-in for staff** (authenticator app, TOTP) is enforced on every staff route. A stolen password alone no longer gives access to enquiries.
+- **Append-only staff audit log.** Every sign-in, sign-out, enquiry view and vacancy change is recorded with who, when, from where and what changed. Tests prove the history cannot be edited or deleted, even by the database owner.
+- **POPIA privacy notice** at `/privacy`, linked from the footer and both forms.
+- **Dead code:** 5 empty page files, an unused dependency, a template asset, 134 unused CSS rules and unused exports removed. The CSS shrank by 14%, and the site was verified **pixel-identical** on 20 page and device screenshots.
+- **Accessibility:** 0 axe-core violations (WCAG 2.1 AA) on every page, desktop and mobile. 120+ low-contrast labels were fixed.
+- **Operations:** graceful shutdown, access log, crash logging, Dependabot.
+
+Browser testing of the new sign-in also caught **three defects in the new code before release**. The most serious was that the password typed on step 1 reappeared, readable, in the code field on step 2. All three are fixed and covered by E2E checks (R2-09 to R2-11 below).
 
 ---
 
@@ -54,6 +67,24 @@ Severity uses CVSS-style judgement: **High** means direct data exposure or servi
 | QA-19 | Low (UX) | The staff dashboard showed contact enquiries without the sender's name, phone or enquiry type | Fields added; internal payment fields hidden | E2E "enquiry shows name/phone/type" |
 | QA-20 | Info | Leftover Formspree `_subject` hidden field; no tests, secret scanning or SAST in CI | Removed; CI now runs the backend tests, a secret-pattern scan and CodeQL | `.github/workflows/ci.yml` |
 
+### Fixed in round 2
+
+| ID | Sev. | Finding | Fix | Evidence |
+|---|---|---|---|---|
+| R2-01 | **High** | (was OPEN-2) Staff accounts protected by password only | Mandatory TOTP MFA via Supabase Auth; AAL2 enforced on every staff route; code step shares the sign-in rate limit and account lockout | `mfa.test.js` (8 tests); E2E MFA checks |
+| R2-02 | **High** | (was OPEN-1) No privacy notice although personal information is collected | `/privacy` page based on what the code actually collects; linked from the footer and both forms | E2E and axe on `/privacy` |
+| R2-03 | Medium | (was OPEN-4, partly) No record of staff actions | Append-only `staff_audit_log` (migration 005) and dashboard panel | 2 API tests; 9 DB checks |
+| R2-04 | Medium | 120+ text elements failed WCAG AA contrast (3.8–4.2:1) | `--color-accent-text` #296fb0 (≥ 4.7:1) for text only | axe: 0 violations |
+| R2-05 | Medium | A stray, keyboard-focusable "Close navigation menu" button showed above the header on desktop | Hidden outside the mobile layout; removed from the tab order (Escape still closes the menu) | Screenshot and axe |
+| R2-06 | Low | Careers list declared `role="list"` but contained buttons (broken for screen readers) | Valid markup; `aria-pressed` marks the selected vacancy | axe |
+| R2-07 | Low | Non-numeric salaries displayed as "ZAR Market Related Salary" | Currency label only shown for amounts | Screenshot |
+| R2-08 | Low (UX) | Staff enquiry details were unstyled, used US date format, and didn't show payment status | Labelled grid, SA date format, contact/job-order and Paid/Awaiting payment badges, safe reply link | Screenshot |
+| R2-09 | **High** (new code) | Step 2 of sign-in showed the step-1 password in plain text in the code field (React reused the input element) | Separate keyed forms | E2E "password is not carried into the code field" |
+| R2-10 | Medium (new code) | A wrong authenticator code sent the user back to the password step | The session-expiry handler now ignores sign-in steps; only an expired ticket restarts | E2E "wrong code keeps the user on the code step" |
+| R2-11 | Low (new code) | The code field wasn't focused automatically | Focus on step change; `autocomplete="one-time-code"` | E2E |
+| R2-12 | Low | Dead code: empty page files, unused `@reduxjs/toolkit`, Vite template `icons.svg`, 134 unused CSS rules, unused exports; the README referenced a missing `frontend/.env.example` | Removed or added | knip clean; build pixel-identical |
+| R2-13 | Low (ops) | No graceful shutdown, access log or automated dependency updates | SIGTERM handling, JSON access log, `unhandledRejection` logging, Dependabot | Live start/stop test |
+
 ### Confirmed secure (no change needed)
 
 - Payment trust: a payment counts as paid only after Paystack's verify API confirms the reference, status, **exact amount**, currency **and** email. Underpayment is rejected (tested).
@@ -68,16 +99,16 @@ Severity uses CVSS-style judgement: **High** means direct data exposure or servi
 
 | ID | Sev. | Item | Recommendation |
 |---|---|---|---|
-| OPEN-1 | **High** | No privacy policy or POPIA notice, but personal information is collected | Publish a privacy policy and link it from both forms before go-live |
-| OPEN-2 | **High** | Staff accounts are protected by password only | Enable Supabase MFA for staff and enforce `aal2` in `requireStaff` |
+| OPEN-1 | Info | ~~No privacy notice~~ Fixed in R2-02. The text must still be reviewed by whoever handles IMFORCE's legal and POPIA matters (contact email, retention periods, whether providers process data outside South Africa). | IMFORCE review |
+| OPEN-2 | — | ~~Password-only staff accounts~~ Fixed in R2-01 | — |
 | OPEN-3 | Medium | Rate limiter, block list and lockouts are in memory: they reset on restart and are per instance | Run a single API instance for now; add Redis or a DB store and an edge WAF before scaling |
-| OPEN-4 | Medium | No staff roles and no audit log of staff actions (any staff member can delete any vacancy) | Add roles and an `audit_log` table (who, what, when, before and after) |
-| OPEN-5 | Medium | Repository controls cannot be set from code | Owner: enable branch protection, required reviews and CI, secret scanning and push protection, Dependabot, and 2FA |
+| OPEN-4 | Low | ~~No audit log~~ Fixed in R2-03. Still no recruiter-versus-admin roles: any staff member can delete any vacancy (now fully audited). | Add roles if IMFORCE wants to restrict deletes |
+| OPEN-5 | Medium | Repository controls cannot be set from code | Owner: enable branch protection, required reviews and CI, secret scanning and push protection, Dependabot alerts (the config file is added), and 2FA |
 | OPEN-6 | Medium | Job-order and contact forms can still be spammed at 6 per minute per IP (orders saved before payment) | Monitor `security_events`; add Cloudflare Turnstile if abuse appears |
 | OPEN-7 | Medium | Supabase public sign-up may be enabled. That is harmless for access (staff need `staff_profiles`) but lets anyone create auth users. | Disable "Allow new users to sign up" in Supabase Auth |
 | OPEN-8 | Low | 10 moderate npm advisories in frontend **dev** tooling (ESLint/minimatch chain); none ship to users | Update when compatible patches are released |
 | OPEN-12 | Low | Trade-off of QA-04: someone who knows a staff email can deliberately lock that account for 15 minutes | Accepted (industry standard). The `staff-account-locked` alarm fires when it happens; MFA (OPEN-2) makes guessing pointless. |
-| OPEN-9 | Low | Unused `@reduxjs/toolkit`; empty placeholder pages; spaces in folder names | Clean up in a separate PR |
+| OPEN-9 | Low | ~~Unused dependency and empty pages~~ Fixed in R2-12. Folder names with spaces remain (they work, but are awkward for scripts). | Rename in a separate PR |
 | OPEN-10 | Info | Paystack replaces PayPod/NetCash from the scope | Needs written IMFORCE approval |
 | OPEN-11 | Info | Scope features not built (employer accounts, OTP, e-signature, approval workflow, integrations) | See `PRODUCTION_READINESS.md` |
 
@@ -96,9 +127,11 @@ The goal was **no extra friction for genuine users**, with the friction going to
 | Visible deterrence where it matters | The staff login says "Sign-in attempts are monitored and logged." Public pages show nothing of the kind. |
 | Safe defaults for staff | 15-minute idle sign-out; a clear message explains why ("You were signed out after 15 minutes of inactivity"). |
 
-Responsive check: all 9 routes on desktop (1366 px) and iPhone 13 have **no horizontal overflow and no JavaScript errors** (E2E).
+Responsive check: all 10 routes on desktop (1366 px) and iPhone 13 have **no horizontal overflow and no JavaScript errors** (E2E), and **0 accessibility violations** (axe-core, WCAG 2.1 AA).
 
-**UX suggestions (not implemented, need content or design decisions):** add the privacy notice under each form submit button; show a "what happens next" timeline after payment; on the careers page, show the result count and a "clear filters" chip when no roles match.
+Two-step sign-in was designed to be quick: the code field is focused automatically, phones can autofill the code (`one-time-code`), spaces in the code are accepted, a wrong code keeps you on the code step with a plain explanation, and "Use a different account" goes back.
+
+**UX suggestions (not implemented, need content or design decisions):** show a "what happens next" timeline after payment; on the careers page, show a "clear filters" chip when no roles match.
 
 ---
 
@@ -122,9 +155,12 @@ All results were reproduced in the final QA pass. Commands:
 
 | Layer | Command | Result |
 |---|---|---|
-| API and security unit/integration | `cd backend && npm test` | **33 / 33 passed** |
-| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **20 / 20 passed**; migrations re-run safely |
-| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **68 / 68 passed** |
+| API and security unit/integration | `cd backend && npm test` | **43 / 43 passed** (including 8 MFA and 2 audit-log tests) |
+| Database permissions and migrations | `QA_SCRATCH_DB=yes PG…=… ./qa/db-permissions.sh` (scratch PostgreSQL 16) | **29 / 29 passed**; migrations 001–005 re-run safely |
+| Browser E2E (Chromium, desktop and mobile) | `node qa/e2e-smoke.cjs` against `vite preview` | **73 / 73 passed** |
+| Accessibility | axe-core 4 in Playwright, WCAG 2.1 A/AA and best practices, 10 routes × desktop and mobile | **0 violations** |
+| Visual regression (dead-CSS removal) | Full-page screenshots before and after, pixel diff, 20 page/device combinations | **20 / 20 identical** |
+| Live server smoke | `npm start`: health, honeypot alarm, access log, SIGTERM | Pass |
 | Frontend static checks | `npm run lint && npm run build` | Pass |
 | Dependency audit | `npm audit --audit-level=high` (both packages) | Pass. Backend 0 vulnerabilities; frontend 10 moderate (dev only). |
 | Secret scan | CI pattern scan, including untracked files, with a planted-key positive control | Clean; control detected |
@@ -135,11 +171,12 @@ Test design notes: the API suite mocks Supabase, Paystack and the alert webhook 
 
 ## 6. Release conditions (go-live checklist)
 
-- [ ] Run `backend/migrations/004_security_hardening.sql` on Supabase. The API works with or without it, but **client names stay exposed to the anon key until it runs** (QA-02), and the `security_events` audit trail needs it.
+- [ ] Run `backend/migrations/004_security_hardening.sql` and `005_staff_audit_log.sql` on Supabase. The API works without them, but **client names stay exposed to the anon key until 004 runs** (QA-02), and the security and audit trails need both.
+- [ ] Check that MFA (TOTP) is enabled in Supabase (**Authentication → Multi-Factor**) and that `STAFF_MFA_REQUIRED` is **not** set to `false`. Each staff member then sets up their authenticator on their next sign-in. Do a test sign-in on staging first.
 - [ ] Delete the old scope `.docx` from the live web host (QA-03).
 - [ ] Configure the security headers on the chosen host (`public/_headers` or an equivalent).
 - [ ] Set `SECURITY_ALERT_WEBHOOK_URL` to a monitored Slack or Teams channel and trigger a test (`curl https://<api>/api/admin` from a non-allowlisted network should produce an alert).
 - [ ] Set `TRUST_PROXY_HOPS` correctly (check that `security_events.ip_address` shows real client IPs, not the proxy's).
-- [ ] OPEN-1 privacy policy, OPEN-2 staff MFA, OPEN-5 repository protections, OPEN-7 disable public sign-up.
+- [ ] Have the privacy notice reviewed by IMFORCE (OPEN-1). Repository protections (OPEN-5). Disable public sign-up in Supabase (OPEN-7).
 - [ ] Paystack test-mode payment and webhook verified end to end, then switch to live keys.
 - [ ] Independent penetration test, remediation, retest, and **written IMFORCE approval** (scope §10).
